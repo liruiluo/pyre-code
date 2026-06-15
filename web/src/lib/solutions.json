@@ -129,6 +129,20 @@
       }
     ]
   },
+  "greedy_decoding": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def greedy_decode(logits_fn, start_token, max_len, eos_token=None):\n    seq = [int(start_token)]\n    while len(seq) < max_len:\n        logits = logits_fn(torch.tensor(seq))\n        next_token = int(torch.argmax(logits).item())\n        seq.append(next_token)\n        if eos_token is not None and next_token == eos_token:\n            break\n    return seq",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "def next_is_length(tokens):\n    logits = torch.full((6,), -10.0)\n    logits[min(len(tokens), 5)] = 1.0\n    return logits\nprint(greedy_decode(next_is_length, start_token=0, max_len=6, eos_token=5))",
+        "role": "demo"
+      }
+    ]
+  },
   "label_smoothing": {
     "cells": [
       {
@@ -171,6 +185,20 @@
       }
     ]
   },
+  "mse_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def mse_loss(pred, target, reduction='mean'):\n    loss = (pred - target) ** 2\n    if reduction == 'mean':\n        return loss.mean()\n    if reduction == 'sum':\n        return loss.sum()\n    if reduction == 'none':\n        return loss\n    raise ValueError(\"reduction must be 'mean', 'sum', or 'none'\")",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "pred = torch.tensor([1.0, 2.0, 3.0])\ntarget = torch.tensor([0.0, 2.0, 5.0])\nprint('mean:', mse_loss(pred, target).item())\nprint('sum: ', mse_loss(pred, target, reduction='sum').item())",
+        "role": "demo"
+      }
+    ]
+  },
   "noise_schedule": {
     "cells": [
       {
@@ -209,6 +237,20 @@
       {
         "type": "code",
         "source": "x = torch.tensor([-2., -1., 0., 1., 2.])\nprint(\"Input: \", x)\nprint(\"Output:\", relu(x))",
+        "role": "demo"
+      }
+    ]
+  },
+  "sgd": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class MySGD:\n    def __init__(self, params, lr=1e-2):\n        self.params = list(params)\n        self.lr = lr\n\n    def step(self):\n        with torch.no_grad():\n            for p in self.params:\n                if p.grad is None:\n                    continue\n                p -= self.lr * p.grad\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "w = torch.tensor([1.0, -2.0], requires_grad=True)\nopt = MySGD([w], lr=0.1)\n(w ** 2).sum().backward()\nopt.step()\nprint(w)",
         "role": "demo"
       }
     ]
@@ -377,6 +419,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(0)\nQ = torch.randn(1, 4, 8)\nK = torch.randn(1, 4, 8)\nV = torch.randn(1, 4, 8)\nout = causal_attention(Q, K, V)\nprint(\"Pos 0 == V[0]?\", torch.allclose(out[:, 0], V[:, 0], atol=1e-5))",
+        "role": "demo"
+      }
+    ]
+  },
+  "continuous_batching": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def continuous_batching_schedule(requests, max_batch_size):\n    remaining = {i: tokens for i, (_, tokens) in enumerate(requests) if tokens > 0}\n    pending = sorted(\n        [(arrival, i) for i, (arrival, tokens) in enumerate(requests) if tokens > 0]\n    )\n    waiting = []\n    active = []\n    schedule = []\n    time = 0\n    ptr = 0\n\n    while ptr < len(pending) or waiting or active:\n        if not active and not waiting and ptr < len(pending) and time < pending[ptr][0]:\n            time = pending[ptr][0]\n\n        while ptr < len(pending) and pending[ptr][0] <= time:\n            waiting.append(pending[ptr][1])\n            ptr += 1\n\n        while waiting and len(active) < max_batch_size:\n            active.append(waiting.pop(0))\n\n        if active:\n            schedule.append(sorted(active))\n            completed = []\n            for request_id in active:\n                remaining[request_id] -= 1\n                if remaining[request_id] == 0:\n                    completed.append(request_id)\n            active = [request_id for request_id in active if request_id not in completed]\n        time += 1\n\n    return schedule",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "requests = [(0, 2), (0, 1), (1, 2)]\nprint(continuous_batching_schedule(requests, max_batch_size=2))",
         "role": "demo"
       }
     ]
@@ -702,6 +758,20 @@
       }
     ]
   },
+  "prenorm_postnorm": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class ResidualNormBlock(nn.Module):\n    def __init__(self, d_model, sublayer, mode='pre'):\n        super().__init__()\n        if mode not in ('pre', 'post'):\n            raise ValueError(\"mode must be 'pre' or 'post'\")\n        self.sublayer = sublayer\n        self.norm = nn.LayerNorm(d_model)\n        self.mode = mode\n\n    def forward(self, x):\n        if self.mode == 'pre':\n            return x + self.sublayer(self.norm(x))\n        return self.norm(x + self.sublayer(x))",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "sublayer = nn.Linear(16, 16)\npre = ResidualNormBlock(16, sublayer, mode='pre')\nx = torch.randn(2, 4, 16)\nprint(pre(x).shape)",
+        "role": "demo"
+      }
+    ]
+  },
   "reinforce_loss": {
     "cells": [
       {
@@ -800,6 +870,20 @@
       }
     ]
   },
+  "softmax_regression": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class SoftmaxRegression(nn.Module):\n    def __init__(self, in_features, num_classes):\n        super().__init__()\n        self.linear = nn.Linear(in_features, num_classes)\n\n    def forward(self, x):\n        return self.linear(x)\n\n    def loss(self, x, y):\n        return F.cross_entropy(self(x), y)\n\n    def predict(self, x):\n        return torch.argmax(self(x), dim=-1)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "model = SoftmaxRegression(4, 3)\nx = torch.randn(5, 4)\ny = torch.randint(0, 3, (5,))\nprint('logits:', model(x).shape)\nprint('loss:', model.loss(x, y).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "swiglu": {
     "cells": [
       {
@@ -824,6 +908,20 @@
       {
         "type": "code",
         "source": "logits = torch.tensor([1.0, 5.0, 2.0, 0.5])\nprint('top_k=1:', sample_top_k_top_p(logits.clone(), top_k=1))\nprint('top_p=0.5:', sample_top_k_top_p(logits.clone(), top_p=0.5))",
+        "role": "demo"
+      }
+    ]
+  },
+  "transformer_ffn": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class TransformerFFN(nn.Module):\n    def __init__(self, d_model, d_ff, dropout=0.0):\n        super().__init__()\n        self.fc1 = nn.Linear(d_model, d_ff)\n        self.dropout = nn.Dropout(dropout)\n        self.fc2 = nn.Linear(d_ff, d_model)\n\n    def forward(self, x):\n        return self.fc2(self.dropout(F.gelu(self.fc1(x))))",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "ffn = TransformerFFN(d_model=64, d_ff=256)\nx = torch.randn(2, 8, 64)\nprint(ffn(x).shape)",
         "role": "demo"
       }
     ]

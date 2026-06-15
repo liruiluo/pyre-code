@@ -88,5 +88,12 @@
   "kl_penalty": "def kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1):\n    pass",
   "learnable_pe": "class LearnablePositionEncoding(nn.Module):\n\n    def __init__(self, max_len, d_model):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
   "mqa": "class MultiQueryAttention(nn.Module):\n\n    def __init__(self, d_model, num_heads):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
-  "temperature_sampling": "def temperature_sampling(logits, temperature=1.0):\n    pass"
+  "temperature_sampling": "def temperature_sampling(logits, temperature=1.0):\n    pass",
+  "mse_loss": "def mse_loss(pred, target, reduction='mean'):\n    pass",
+  "greedy_decoding": "def greedy_decode(logits_fn, start_token, max_len, eos_token=None):\n    pass",
+  "sgd": "class MySGD:\n\n    def __init__(self, params, lr=1e-2):\n        pass\n\n    def step(self):\n        pass\n\n    def zero_grad(self):\n        pass",
+  "softmax_regression": "class SoftmaxRegression(nn.Module):\n\n    def __init__(self, in_features, num_classes):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass\n\n    def loss(self, x, y):\n        pass\n\n    def predict(self, x):\n        pass",
+  "transformer_ffn": "class TransformerFFN(nn.Module):\n\n    def __init__(self, d_model, d_ff, dropout=0.0):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
+  "prenorm_postnorm": "class ResidualNormBlock(nn.Module):\n\n    def __init__(self, d_model, sublayer, mode='pre'):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
+  "continuous_batching": "def continuous_batching_schedule(requests, max_batch_size):\n    pass"
 }

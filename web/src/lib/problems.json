@@ -2820,6 +2820,233 @@
           "code": "\nimport torch\nmqa = {fn}(16, 4)\nx = torch.randn(2, 3, 16, requires_grad=True)\nmqa.forward(x).sum().backward()\nassert x.grad is not None\nassert mqa.W_q.weight.grad is not None and mqa.W_k.weight.grad is not None and mqa.W_v.weight.grad is not None\n"
         }
       ]
+    },
+    {
+      "id": "greedy_decoding",
+      "title": "Greedy Decoding",
+      "titleZh": "贪心解码",
+      "difficulty": "Easy",
+      "functionName": "greedy_decode",
+      "hint": "Initialize `seq = [start_token]`. While `len(seq) < max_len`, call `logits_fn(torch.tensor(seq))`, append `argmax`, and break on EOS.",
+      "hintZh": "初始化 `seq = [start_token]`。当 `len(seq) < max_len` 时调用 `logits_fn(torch.tensor(seq))`，追加 `argmax`，遇到 EOS 退出。",
+      "descriptionEn": "Implement greedy autoregressive decoding.\n\nAt each generation step, greedy decoding selects the token with the highest logit/probability and appends it to the sequence.\n\n**Signature:** `greedy_decode(logits_fn, start_token, max_len, eos_token=None) -> list[int]`\n\n**Parameters:**\n- `logits_fn` — callable that takes a 1-D token tensor and returns logits over the vocabulary\n- `start_token` — first token id\n- `max_len` — maximum returned sequence length including the start token\n- `eos_token` — optional stop token\n\n**Returns:** list of token ids\n\n**Constraints:**\n- Use `argmax` at each step\n- Stop early when the generated token equals `eos_token`\n- Never return more than `max_len` tokens",
+      "descriptionZh": "实现自回归贪心解码。\n\n每个生成步选择 logits/概率最大的 token，并追加到序列末尾。\n\n**签名:** `greedy_decode(logits_fn, start_token, max_len, eos_token=None) -> list[int]`\n\n**参数:**\n- `logits_fn` — 接受一维 token 张量并返回词表 logits 的可调用对象\n- `start_token` — 起始 token id\n- `max_len` — 返回序列最大长度，包含起始 token\n- `eos_token` — 可选终止 token\n\n**返回:** token id 列表\n\n**约束:**\n- 每一步使用 `argmax`\n- 生成 token 等于 `eos_token` 时提前停止\n- 返回长度不得超过 `max_len`",
+      "tests": [
+        {
+          "name": "Follows argmax path",
+          "code": "\nimport torch\ndef logits_fn(tokens):\n    logits = torch.full((6,), -10.0)\n    logits[min(len(tokens), 5)] = 1.0\n    return logits\nseq = {fn}(logits_fn, start_token=0, max_len=6, eos_token=5)\nassert seq == [0, 1, 2, 3, 4, 5], f'Got {seq}'\n"
+        },
+        {
+          "name": "Stops at eos",
+          "code": "\nimport torch\ndef logits_fn(tokens):\n    logits = torch.zeros(4)\n    logits[3] = 99.0\n    return logits\nseq = {fn}(logits_fn, start_token=0, max_len=10, eos_token=3)\nassert seq == [0, 3], f'Should stop after EOS, got {seq}'\n"
+        },
+        {
+          "name": "Respects max_len without eos",
+          "code": "\nimport torch\ndef logits_fn(tokens):\n    logits = torch.zeros(3)\n    logits[1] = 1.0\n    return logits\nseq = {fn}(logits_fn, start_token=2, max_len=4, eos_token=None)\nassert seq == [2, 1, 1, 1], f'Got {seq}'\n"
+        },
+        {
+          "name": "Returns list for max_len one",
+          "code": "\nimport torch\ndef logits_fn(tokens):\n    return torch.randn(5)\nseq = {fn}(logits_fn, start_token=7, max_len=1)\nassert seq == [7]\n"
+        }
+      ]
+    },
+    {
+      "id": "mse_loss",
+      "title": "MSE Loss",
+      "titleZh": "均方误差损失",
+      "difficulty": "Easy",
+      "functionName": "mse_loss",
+      "hint": "Compute `(pred - target) ** 2`, then apply the requested reduction: mean, sum, or none.",
+      "hintZh": "先计算 `(pred - target) ** 2`，再按 `mean`、`sum` 或 `none` 做归约。",
+      "descriptionEn": "Implement mean squared error loss from scratch.\n\nMSE is the standard regression loss: average the squared difference between prediction and target.\n\n**Signature:** `mse_loss(pred, target, reduction='mean') -> Tensor`\n\n**Parameters:**\n- `pred` — prediction tensor of any shape\n- `target` — target tensor, same shape as `pred`\n- `reduction` — `'mean'`, `'sum'`, or `'none'`\n\n**Returns:** reduced loss tensor\n\n**Constraints:**\n- Match `torch.nn.functional.mse_loss`\n- Preserve gradients with respect to `pred`",
+      "descriptionZh": "从零实现均方误差损失。\n\nMSE 是回归任务的标准损失：对预测值和目标值之差的平方取平均。\n\n**签名:** `mse_loss(pred, target, reduction='mean') -> Tensor`\n\n**参数:**\n- `pred` — 任意形状的预测张量\n- `target` — 与 `pred` 同形状的目标张量\n- `reduction` — `'mean'`、`'sum'` 或 `'none'`\n\n**返回:** 归约后的损失张量\n\n**约束:**\n- 与 `torch.nn.functional.mse_loss` 一致\n- 保留对 `pred` 的梯度",
+      "tests": [
+        {
+          "name": "Matches torch mean reduction",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(0)\npred = torch.randn(4, 5)\ntarget = torch.randn(4, 5)\nout = {fn}(pred, target)\nref = F.mse_loss(pred, target)\nassert torch.allclose(out, ref, atol=1e-6), f'{out.item():.6f} vs {ref.item():.6f}'\n"
+        },
+        {
+          "name": "Sum reduction",
+          "code": "\nimport torch\npred = torch.tensor([1.0, 2.0, 3.0])\ntarget = torch.tensor([0.0, 2.0, 5.0])\nout = {fn}(pred, target, reduction='sum')\nassert torch.allclose(out, torch.tensor(5.0)), f'Expected 5.0, got {out}'\n"
+        },
+        {
+          "name": "No reduction keeps shape",
+          "code": "\nimport torch\npred = torch.tensor([[1.0, 2.0], [3.0, 4.0]])\ntarget = torch.tensor([[1.5, 1.0], [1.0, 6.0]])\nout = {fn}(pred, target, reduction='none')\nexpected = (pred - target) ** 2\nassert out.shape == pred.shape\nassert torch.allclose(out, expected)\n"
+        },
+        {
+          "name": "Gradient flow",
+          "code": "\nimport torch\npred = torch.randn(8, requires_grad=True)\ntarget = torch.randn(8)\nloss = {fn}(pred, target)\nloss.backward()\nassert pred.grad is not None, 'Missing gradient'\nexpected_grad = 2 * (pred.detach() - target) / pred.numel()\nassert torch.allclose(pred.grad, expected_grad, atol=1e-6)\n"
+        },
+        {
+          "name": "Invalid reduction fails clearly",
+          "code": "\nimport torch\ntry:\n    {fn}(torch.zeros(2), torch.ones(2), reduction='median')\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError('Invalid reduction should raise ValueError')\n"
+        }
+      ]
+    },
+    {
+      "id": "sgd",
+      "title": "SGD Optimizer",
+      "titleZh": "SGD 优化器",
+      "difficulty": "Easy",
+      "functionName": "MySGD",
+      "hint": "Store `list(params)`. In `step`, use `with torch.no_grad(): p -= lr * p.grad`. In `zero_grad`, call `p.grad.zero_()` if grad exists.",
+      "hintZh": "保存 `list(params)`。`step` 中使用 `with torch.no_grad(): p -= lr * p.grad`。`zero_grad` 中若梯度存在则 `p.grad.zero_()`。",
+      "descriptionEn": "Implement plain stochastic gradient descent as an optimizer class.\n\nSGD updates each parameter with `p = p - lr * grad`. This is the base optimizer that momentum and Adam build on.\n\n**Signature:** `MySGD(params, lr=1e-2)`\n\n**Methods:**\n- `step()` — apply one SGD update to every parameter with a gradient\n- `zero_grad()` — zero all parameter gradients\n\n**Constraints:**\n- Match `torch.optim.SGD` without momentum or weight decay\n- Skip parameters whose `grad` is `None`\n- Update parameters without tracking autograd operations",
+      "descriptionZh": "实现最基础的随机梯度下降优化器。\n\nSGD 对每个参数执行 `p = p - lr * grad`。Momentum 和 Adam 等优化器都以它为基础。\n\n**签名:** `MySGD(params, lr=1e-2)`\n\n**方法:**\n- `step()` — 对每个有梯度的参数执行一次 SGD 更新\n- `zero_grad()` — 清零所有参数梯度\n\n**约束:**\n- 与无 momentum、无 weight decay 的 `torch.optim.SGD` 一致\n- 跳过 `grad is None` 的参数\n- 参数更新不能被 autograd 追踪",
+      "tests": [
+        {
+          "name": "Matches torch.optim.SGD",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nw1 = torch.randn(4, requires_grad=True)\nw2 = w1.detach().clone().requires_grad_(True)\nopt1 = {fn}([w1], lr=0.05)\nopt2 = torch.optim.SGD([w2], lr=0.05)\nfor _ in range(6):\n    loss1 = (w1 ** 2).sum() + w1.sum()\n    loss2 = (w2 ** 2).sum() + w2.sum()\n    loss1.backward(); loss2.backward()\n    opt1.step(); opt1.zero_grad()\n    opt2.step(); opt2.zero_grad()\nassert torch.allclose(w1.detach(), w2.detach(), atol=1e-6), f'Max diff {(w1 - w2).abs().max().item():.8f}'\n"
+        },
+        {
+          "name": "Single manual update",
+          "code": "\nimport torch\nw = torch.tensor([1.0, -2.0], requires_grad=True)\nw.grad = torch.tensor([0.5, -1.0])\nopt = {fn}([w], lr=0.1)\nopt.step()\nexpected = torch.tensor([0.95, -1.9])\nassert torch.allclose(w.detach(), expected), f'{w.detach()} vs {expected}'\n"
+        },
+        {
+          "name": "Skips missing gradients",
+          "code": "\nimport torch\nw = torch.tensor([3.0], requires_grad=True)\nopt = {fn}([w], lr=0.1)\nopt.step()\nassert torch.allclose(w.detach(), torch.tensor([3.0]))\n"
+        },
+        {
+          "name": "zero_grad works",
+          "code": "\nimport torch\nw = torch.randn(5, requires_grad=True)\nopt = {fn}([w])\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0\n"
+        }
+      ]
+    },
+    {
+      "id": "continuous_batching",
+      "title": "Continuous Batching Schedule",
+      "titleZh": "连续批处理调度",
+      "difficulty": "Medium",
+      "functionName": "continuous_batching_schedule",
+      "hint": "Track `time`, `waiting`, `active`, and remaining token counts. Each loop: add arrivals, fill active up to capacity, record active ids, decrement remaining, remove completed, then advance time.",
+      "hintZh": "维护 `time`、`waiting`、`active` 和剩余 token。每轮：加入到达请求，填满 active，记录 active id，剩余 token 减一，移除完成请求，然后时间加一。",
+      "descriptionEn": "Implement a small continuous-batching scheduler for autoregressive serving.\n\nUnlike static batching, continuous batching admits new requests at every decoding step as soon as capacity is available.\n\n**Signature:** `continuous_batching_schedule(requests, max_batch_size) -> list[list[int]]`\n\n**Parameters:**\n- `requests` — list of `(arrival_step, num_decode_tokens)` tuples\n- `max_batch_size` — maximum active requests per step\n\n**Returns:** a list where each item is the sorted request ids active during that decoding step\n\n**Constraints:**\n- Request ids are their original list indices\n- At each step, admit arrived waiting requests in FIFO/id order until capacity is full\n- Each active request consumes one decode token per step\n- Remove requests whose remaining tokens reach zero at the end of the step\n- Continue until all requests have finished",
+      "descriptionZh": "实现一个自回归推理服务中的连续批处理调度器。\n\n不同于静态 batching，连续批处理会在每个解码步只要有容量就接入新请求。\n\n**签名:** `continuous_batching_schedule(requests, max_batch_size) -> list[list[int]]`\n\n**参数:**\n- `requests` — `(arrival_step, num_decode_tokens)` 元组列表\n- `max_batch_size` — 每步最多同时活跃请求数\n\n**返回:** 列表中每一项是该解码步活跃的请求 id，按升序排列\n\n**约束:**\n- 请求 id 为其在原始列表中的下标\n- 每个 step 按 FIFO/id 顺序接入已到达等待请求，直到容量满\n- 每个活跃请求每步消耗一个 decode token\n- 剩余 token 到 0 的请求在该步结束时移除\n- 一直运行到所有请求完成",
+      "tests": [
+        {
+          "name": "Static batch when all arrive together",
+          "code": "\nrequests = [(0, 2), (0, 1), (0, 3)]\nschedule = {fn}(requests, max_batch_size=3)\nassert schedule == [[0, 1, 2], [0, 2], [2]], f'Got {schedule}'\n"
+        },
+        {
+          "name": "Admits new request after one finishes",
+          "code": "\nrequests = [(0, 2), (0, 1), (1, 2)]\nschedule = {fn}(requests, max_batch_size=2)\n# step0: 0 and 1 active, request 1 finishes\n# step1: request 2 can enter while request 0 continues\nassert schedule == [[0, 1], [0, 2], [2]], f'Got {schedule}'\n"
+        },
+        {
+          "name": "Waits for future arrivals without empty steps",
+          "code": "\nrequests = [(2, 1), (4, 2)]\nschedule = {fn}(requests, max_batch_size=1)\nassert schedule == [[0], [1], [1]], f'Got {schedule}'\n"
+        },
+        {
+          "name": "FIFO admission under capacity pressure",
+          "code": "\nrequests = [(0, 2), (0, 2), (0, 1), (1, 1)]\nschedule = {fn}(requests, max_batch_size=2)\nassert schedule == [[0, 1], [0, 1], [2, 3]], f'Got {schedule}'\n"
+        },
+        {
+          "name": "Zero-token requests are ignored",
+          "code": "\nrequests = [(0, 0), (0, 1), (1, 0), (1, 1)]\nschedule = {fn}(requests, max_batch_size=2)\nassert schedule == [[1], [3]], f'Got {schedule}'\n"
+        },
+        {
+          "name": "Active requests are not preempted by lower ids",
+          "code": "\nrequests = [(2, 1), (0, 3)]\nschedule = {fn}(requests, max_batch_size=1)\n# Request 1 starts at step 0 and should keep the only slot until it finishes.\n# Later request 0 waits even though its id is smaller.\nassert schedule == [[1], [1], [1], [0]], f'Got {schedule}'\n"
+        }
+      ]
+    },
+    {
+      "id": "prenorm_postnorm",
+      "title": "Pre-Norm vs Post-Norm Residual Block",
+      "titleZh": "Pre-Norm 与 Post-Norm 残差块",
+      "difficulty": "Medium",
+      "functionName": "ResidualNormBlock",
+      "hint": "Store the sublayer, a LayerNorm, and mode. Branch in `forward`: pre uses normalized input inside the sublayer; post normalizes after residual addition.",
+      "hintZh": "保存 sublayer、LayerNorm 和 mode。`forward` 中分支：pre 把归一化后的输入送入子层；post 先残差相加再归一化。",
+      "descriptionEn": "Implement a residual wrapper that supports both Transformer normalization orders.\n\nPre-norm applies LayerNorm before the sublayer: `x + sublayer(norm(x))`. Post-norm applies LayerNorm after the residual addition: `norm(x + sublayer(x))`.\n\n**Signature:** `ResidualNormBlock(d_model, sublayer, mode='pre')` (nn.Module)\n\n**Forward:** `forward(x) -> Tensor`\n\n**Constraints:**\n- `mode='pre'`: return `x + sublayer(norm(x))`\n- `mode='post'`: return `norm(x + sublayer(x))`\n- Use one `nn.LayerNorm(d_model)`\n- Raise `ValueError` for unknown modes",
+      "descriptionZh": "实现同时支持 Transformer 两种归一化顺序的残差包装层。\n\nPre-norm 在子层前做 LayerNorm：`x + sublayer(norm(x))`。Post-norm 在残差相加后做 LayerNorm：`norm(x + sublayer(x))`。\n\n**签名:** `ResidualNormBlock(d_model, sublayer, mode='pre')`（nn.Module）\n\n**前向传播:** `forward(x) -> Tensor`\n\n**约束:**\n- `mode='pre'`：返回 `x + sublayer(norm(x))`\n- `mode='post'`：返回 `norm(x + sublayer(x))`\n- 使用一个 `nn.LayerNorm(d_model)`\n- 未知 mode 要抛出 `ValueError`",
+      "tests": [
+        {
+          "name": "Pre-norm formula",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(0)\nsublayer = nn.Linear(4, 4, bias=False)\nblock = {fn}(4, sublayer, mode='pre')\nx = torch.randn(2, 3, 4)\nout = block(x)\nexpected = x + sublayer(block.norm(x))\nassert torch.allclose(out, expected, atol=1e-6), 'pre mode should be x + sublayer(norm(x))'\n"
+        },
+        {
+          "name": "Post-norm formula",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(0)\nsublayer = nn.Linear(4, 4, bias=False)\nblock = {fn}(4, sublayer, mode='post')\nx = torch.randn(2, 3, 4)\nout = block(x)\nexpected = block.norm(x + sublayer(x))\nassert torch.allclose(out, expected, atol=1e-6), 'post mode should be norm(x + sublayer(x))'\n"
+        },
+        {
+          "name": "Preserves shape and module type",
+          "code": "\nimport torch\nimport torch.nn as nn\nblock = {fn}(8, nn.Linear(8, 8), mode='pre')\nassert isinstance(block, nn.Module)\nx = torch.randn(5, 7, 8)\nassert block(x).shape == x.shape\nassert isinstance(block.norm, nn.LayerNorm)\n"
+        },
+        {
+          "name": "Invalid mode raises",
+          "code": "\nimport torch.nn as nn\ntry:\n    {fn}(4, nn.Linear(4, 4), mode='middle')\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError('Unknown mode should raise ValueError')\n"
+        },
+        {
+          "name": "Gradient flow through sublayer and norm",
+          "code": "\nimport torch\nimport torch.nn as nn\nblock = {fn}(6, nn.Linear(6, 6), mode='pre')\nx = torch.randn(2, 4, 6, requires_grad=True)\nblock(x).sum().backward()\nassert x.grad is not None\nassert all(p.grad is not None for p in block.parameters()), 'All parameters should receive gradients'\n"
+        }
+      ]
+    },
+    {
+      "id": "softmax_regression",
+      "title": "Softmax Regression",
+      "titleZh": "Softmax 回归",
+      "difficulty": "Medium",
+      "functionName": "SoftmaxRegression",
+      "hint": "Use `self.linear = nn.Linear(in_features, num_classes)`. Forward returns logits, loss calls `F.cross_entropy`, predict uses `argmax(dim=-1)`.",
+      "hintZh": "使用 `self.linear = nn.Linear(in_features, num_classes)`。前向返回 logits，loss 调 `F.cross_entropy`，predict 用 `argmax(dim=-1)`。",
+      "descriptionEn": "Implement multinomial logistic regression, also called softmax regression.\n\nThis is the simplest multiclass classifier: a linear layer produces class logits and cross-entropy trains the weights.\n\n**Signature:** `SoftmaxRegression(in_features, num_classes)` (nn.Module)\n\n**Methods:**\n- `forward(x) -> Tensor` — return logits of shape `(N, C)`\n- `loss(x, y) -> Tensor` — mean cross-entropy loss\n- `predict(x) -> Tensor` — class indices from `argmax(logits)`\n\n**Constraints:**\n- Must inherit from `nn.Module`\n- Use a single linear mapping from features to classes\n- `loss` must match `F.cross_entropy`",
+      "descriptionZh": "实现多分类逻辑回归，也叫 Softmax 回归。\n\n这是最简单的多分类器：线性层输出类别 logits，用交叉熵训练权重。\n\n**签名:** `SoftmaxRegression(in_features, num_classes)`（nn.Module）\n\n**方法:**\n- `forward(x) -> Tensor` — 返回形状 `(N, C)` 的 logits\n- `loss(x, y) -> Tensor` — 平均交叉熵损失\n- `predict(x) -> Tensor` — `argmax(logits)` 得到类别索引\n\n**约束:**\n- 必须继承 `nn.Module`\n- 只使用一个从特征到类别的线性映射\n- `loss` 必须与 `F.cross_entropy` 一致",
+      "tests": [
+        {
+          "name": "Module and parameter shapes",
+          "code": "\nimport torch\nimport torch.nn as nn\nmodel = {fn}(in_features=4, num_classes=3)\nassert isinstance(model, nn.Module), 'Must inherit from nn.Module'\nassert hasattr(model, 'linear'), 'Need self.linear'\nassert model.linear.weight.shape == (3, 4)\nassert model.linear.bias.shape == (3,)\n"
+        },
+        {
+          "name": "Forward returns logits",
+          "code": "\nimport torch\nmodel = {fn}(5, 7)\nx = torch.randn(11, 5)\nlogits = model(x)\nassert logits.shape == (11, 7), f'Expected (11, 7), got {logits.shape}'\n"
+        },
+        {
+          "name": "Loss matches cross entropy",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(0)\nmodel = {fn}(4, 3)\nx = torch.randn(8, 4)\ny = torch.randint(0, 3, (8,))\nout = model.loss(x, y)\nref = F.cross_entropy(model(x), y)\nassert torch.allclose(out, ref, atol=1e-6), f'{out.item():.6f} vs {ref.item():.6f}'\n"
+        },
+        {
+          "name": "Predict uses argmax",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nmodel = {fn}(3, 2)\nwith torch.no_grad():\n    model.linear.weight.copy_(torch.tensor([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]]))\n    model.linear.bias.zero_()\nx = torch.tensor([[2.0, 0.0, 0.0], [-3.0, 0.0, 0.0]])\npred = model.predict(x)\nassert pred.tolist() == [0, 1], f'Got {pred.tolist()}'\n"
+        },
+        {
+          "name": "Train step reduces loss",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nx = torch.randn(60, 2)\ny = (x[:, 0] - x[:, 1] > 0).long()\nmodel = {fn}(2, 2)\nopt = torch.optim.SGD(model.parameters(), lr=0.2)\nloss0 = model.loss(x, y).item()\nfor _ in range(80):\n    opt.zero_grad()\n    loss = model.loss(x, y)\n    loss.backward()\n    opt.step()\nloss1 = model.loss(x, y).item()\nassert loss1 < loss0 * 0.7, f'Loss did not decrease enough: {loss0:.4f} -> {loss1:.4f}'\n"
+        }
+      ]
+    },
+    {
+      "id": "transformer_ffn",
+      "title": "Transformer Feed-Forward Network",
+      "titleZh": "Transformer 前馈网络",
+      "difficulty": "Medium",
+      "functionName": "TransformerFFN",
+      "hint": "Create `fc1`, `dropout`, and `fc2`. Forward is `fc2(dropout(gelu(fc1(x))))`.",
+      "hintZh": "创建 `fc1`、`dropout` 和 `fc2`。前向为 `fc2(dropout(gelu(fc1(x))))`。",
+      "descriptionEn": "Implement the standard Transformer feed-forward network (FFN).\n\nThe classic Transformer FFN applies two position-wise linear layers with a nonlinearity and optional dropout between them.\n\n**Signature:** `TransformerFFN(d_model, d_ff, dropout=0.0)` (nn.Module)\n\n**Forward:** `forward(x) -> Tensor`\n- `x` — input tensor of shape `(..., d_model)`\n\n**Returns:** tensor with the same leading shape and final dimension `d_model`\n\n**Constraints:**\n- Layers: `Linear(d_model, d_ff)`, GELU, Dropout, `Linear(d_ff, d_model)`\n- Apply the same module to every position independently\n- Preserve batch/sequence dimensions",
+      "descriptionZh": "实现标准 Transformer 前馈网络（FFN）。\n\n经典 Transformer FFN 是逐位置的两层线性网络，中间接非线性激活和可选 dropout。\n\n**签名:** `TransformerFFN(d_model, d_ff, dropout=0.0)`（nn.Module）\n\n**前向传播:** `forward(x) -> Tensor`\n- `x` — 形状为 `(..., d_model)` 的输入张量\n\n**返回:** 前置维度不变、最后一维为 `d_model` 的张量\n\n**约束:**\n- 层结构：`Linear(d_model, d_ff)`、GELU、Dropout、`Linear(d_ff, d_model)`\n- 对每个位置独立应用同一组参数\n- 保持 batch/sequence 维度",
+      "tests": [
+        {
+          "name": "Module and parameter shapes",
+          "code": "\nimport torch\nimport torch.nn as nn\nffn = {fn}(d_model=32, d_ff=128, dropout=0.1)\nassert isinstance(ffn, nn.Module)\nassert ffn.fc1.weight.shape == (128, 32)\nassert ffn.fc2.weight.shape == (32, 128)\nassert hasattr(ffn, 'dropout')\n"
+        },
+        {
+          "name": "3-D output shape",
+          "code": "\nimport torch\nffn = {fn}(d_model=16, d_ff=64)\nx = torch.randn(2, 5, 16)\nout = ffn(x)\nassert out.shape == (2, 5, 16), f'Got {out.shape}'\n"
+        },
+        {
+          "name": "2-D output shape",
+          "code": "\nimport torch\nffn = {fn}(d_model=8, d_ff=24)\nx = torch.randn(7, 8)\nout = ffn(x)\nassert out.shape == (7, 8), f'Got {out.shape}'\n"
+        },
+        {
+          "name": "Numerical composition in eval mode",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(0)\nffn = {fn}(d_model=8, d_ff=16, dropout=0.5)\nffn.eval()\nx = torch.randn(3, 4, 8)\nout = ffn(x)\nexpected = ffn.fc2(F.gelu(ffn.fc1(x)))\nassert torch.allclose(out, expected, atol=1e-6), 'Forward should be fc2(gelu(fc1(x))) in eval mode'\n"
+        },
+        {
+          "name": "Gradient flow",
+          "code": "\nimport torch\nffn = {fn}(d_model=12, d_ff=48)\nx = torch.randn(2, 3, 12, requires_grad=True)\nffn(x).sum().backward()\nassert x.grad is not None\nassert all(p.grad is not None for p in ffn.parameters()), 'All parameters should receive gradients'\n"
+        }
+      ]
     }
   ]
 }
