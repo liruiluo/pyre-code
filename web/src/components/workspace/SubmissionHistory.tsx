@@ -2,10 +2,22 @@
 
 import { useProblemStore } from '@/store/problemStore';
 import { useLocale } from '@/context/LocaleContext';
+import { isStaleCodeDraft, saveCodeDraft } from '@/lib/codeDraft';
 
-export function SubmissionHistory() {
+interface SubmissionHistoryProps {
+  problemId: string;
+  starterCode: string;
+}
+
+export function SubmissionHistory({ problemId, starterCode }: SubmissionHistoryProps) {
   const { submissionHistory, setCurrentCode } = useProblemStore();
   const { locale } = useLocale();
+
+  const restoreCode = (code: string) => {
+    const restoredCode = isStaleCodeDraft(problemId, code) ? starterCode : code;
+    setCurrentCode(restoredCode);
+    saveCodeDraft(problemId, restoredCode);
+  };
 
   if (!submissionHistory.length) {
     return (
@@ -35,7 +47,7 @@ export function SubmissionHistory() {
             {new Date(s.submittedAt).toLocaleString()}
           </span>
           <button
-            onClick={() => setCurrentCode(s.code)}
+            onClick={() => restoreCode(s.code)}
             className="text-xs text-accent hover:underline flex-shrink-0"
           >
             {locale === 'zh' ? '恢复' : 'Restore'}

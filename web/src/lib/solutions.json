@@ -451,6 +451,20 @@
       }
     ]
   },
+  "gae_advantages": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def gae_advantages(rewards: Tensor, values: Tensor, dones: Tensor,\n                   gamma: float = 0.99, lam: float = 0.95) -> Tensor:\n    \"\"\"Generalized Advantage Estimation.\n\n    rewards: (T,) or batch-first (B, T) rewards\n    values: (T+1,) or batch-first (B, T+1) value estimates including bootstrap value\n    dones: (T,) or batch-first (B, T) episode-end flags\n    returns: detached advantages with the same shape as rewards\n    \"\"\"\n    rewards = rewards.detach()\n    values = values.detach()\n    dones = dones.to(dtype=rewards.dtype)\n\n    advantages = torch.empty_like(rewards)\n    gae = torch.zeros_like(rewards[..., 0])\n    T = rewards.shape[-1]\n    for t in reversed(range(T)):\n        nonterminal = 1.0 - dones[..., t]\n        delta = rewards[..., t] + gamma * values[..., t + 1] * nonterminal - values[..., t]\n        gae = delta + gamma * lam * nonterminal * gae\n        advantages[..., t] = gae\n    return advantages.detach()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "rewards = torch.tensor([[1.0, 0.5, -0.25], [0.0, 1.0, 0.2]])\nvalues = torch.tensor([[0.2, 0.1, -0.1, 0.0], [0.1, 0.3, 0.4, 0.5]])\ndones = torch.tensor([[False, True, False], [False, False, True]])\nprint('Advantages:', gae_advantages(rewards, values, dones, gamma=0.9, lam=0.8))",
+        "role": "demo"
+      }
+    ]
+  },
   "gat_layer": {
     "cells": [
       {
@@ -804,6 +818,20 @@
       }
     ]
   },
+  "grpo_clipped_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def grpo_clipped_loss(new_logps: Tensor, old_logps: Tensor, rewards: Tensor,\n                      group_ids: Tensor, clip_ratio: float = 0.2,\n                      eps: float = 1e-5) -> Tensor:\n    \"\"\"Clipped GRPO surrogate loss.\n\n    new_logps: (B,) current policy log-probabilities\n    old_logps: (B,) rollout/old policy log-probabilities, treated as constant\n    rewards: (B,) scalar rewards for sampled responses\n    group_ids: (B,) integer group ids; same id means same prompt/group\n    returns: scalar clipped GRPO loss Tensor\n    \"\"\"\n    advantages = torch.empty_like(rewards)\n    for gid in group_ids.unique():\n        mask = group_ids == gid\n        group_rewards = rewards[mask]\n        mean = group_rewards.mean()\n        std = group_rewards.std(unbiased=False)\n        advantages[mask] = (group_rewards - mean) / (std + eps)\n\n    advantages = advantages.detach()\n    ratios = torch.exp(new_logps - old_logps.detach())\n    unclipped = ratios * advantages\n    clipped = torch.clamp(ratios, 1.0 - clip_ratio, 1.0 + clip_ratio) * advantages\n    return -torch.min(unclipped, clipped).mean()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "new_logps = torch.tensor([0.3, -0.7, -0.6, -1.0])\nold_logps = torch.tensor([0.0, -0.5, -1.0, -1.5])\nrewards = torch.tensor([1.0, 0.8, 0.2, 0.0])\ngroup_ids = torch.tensor([0, 0, 1, 1])\nprint('Loss:', grpo_clipped_loss(new_logps, old_logps, rewards, group_ids).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "grpo_loss": {
     "cells": [
       {
@@ -949,6 +977,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(0)\nB, S, D = 2, 8, 16\nblock_size = 4\nnum_blocks = S // block_size\n\nK_full = torch.randn(B, S, D)\nV_full = torch.randn(B, S, D)\nQ = torch.randn(B, 1, D)\n\nscale = D ** -0.5\nscores_ref = (Q @ K_full.transpose(-2, -1)) * scale\nref_out = torch.softmax(scores_ref, dim=-1) @ V_full\n\ntotal_pages = B * num_blocks\nk_pages = torch.zeros(total_pages, block_size, D)\nv_pages = torch.zeros(total_pages, block_size, D)\nblock_table = []\nfor b in range(B):\n    page_ids = []\n    for blk in range(num_blocks):\n        pid = b * num_blocks + blk\n        k_pages[pid] = K_full[b, blk*block_size:(blk+1)*block_size]\n        v_pages[pid] = V_full[b, blk*block_size:(blk+1)*block_size]\n        page_ids.append(pid)\n    block_table.append(page_ids)\n\npaged_out = paged_attention(Q, k_pages, v_pages, block_table, context_len=S, block_size=block_size)\n\nprint('Shape:', paged_out.shape)\nprint('Max diff vs reference:', (paged_out - ref_out).abs().max().item())\nprint('Match:', torch.allclose(paged_out, ref_out, atol=1e-5))",
+        "role": "demo"
+      }
+    ]
+  },
+  "ppo_full_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def ppo_full_loss(new_logps: Tensor, old_logps: Tensor, rewards: Tensor,\n                  values: Tensor, dones: Tensor, gamma: float = 0.99,\n                  lam: float = 0.95, clip_ratio: float = 0.2) -> Tensor:\n    \"\"\"PPO clipped policy loss with internal GAE.\n\n    Batch-first convention; time is the last dimension.\n    new_logps: (T,) or (B, T) current policy log-probabilities\n    old_logps: (T,) or (B, T) rollout/old policy log-probabilities, treated as constant\n    rewards: (T,) or (B, T) rollout rewards, treated as constant\n    values: (T+1,) or (B, T+1) rollout values, including bootstrap value\n    dones: (T,) or (B, T) episode-end flags\n    returns: scalar clipped PPO policy loss Tensor\n    \"\"\"\n    old_logps = old_logps.detach()\n    rewards = rewards.detach()\n    values = values.detach()\n    dones = dones.to(dtype=rewards.dtype)\n\n    advantages = torch.empty_like(rewards)\n    gae = torch.zeros_like(rewards[..., 0])\n    T = rewards.shape[-1]\n    for t in reversed(range(T)):\n        nonterminal = 1.0 - dones[..., t]\n        delta = rewards[..., t] + gamma * values[..., t + 1] * nonterminal - values[..., t]\n        gae = delta + gamma * lam * nonterminal * gae\n        advantages[..., t] = gae\n\n    advantages = advantages.detach()\n    ratios = torch.exp(new_logps - old_logps)\n    policy_unclipped = ratios * advantages\n    policy_clipped = torch.clamp(ratios, 1.0 - clip_ratio, 1.0 + clip_ratio) * advantages\n    return -torch.min(policy_unclipped, policy_clipped).mean()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "new_logps = torch.tensor([[0.2, -0.4, -0.9], [-0.1, 0.0, -0.3]])\nold_logps = torch.tensor([[0.0, -0.5, -0.6], [-0.2, -0.1, -0.2]])\nrewards = torch.tensor([[1.0, 0.5, -0.25], [0.0, 1.0, 0.2]])\nvalues = torch.tensor([[0.2, 0.1, -0.1, 0.0], [0.1, 0.3, 0.4, 0.5]])\ndones = torch.tensor([[False, True, False], [False, False, True]])\nprint('PPO clipped policy loss with GAE:', ppo_full_loss(new_logps, old_logps, rewards, values, dones, gamma=0.9, lam=0.8))",
         "role": "demo"
       }
     ]

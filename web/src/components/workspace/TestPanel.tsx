@@ -9,11 +9,13 @@ import { SubmissionHistory } from './SubmissionHistory';
 import type { Test } from '@/lib/types';
 
 interface TestPanelProps {
+  problemId: string;
+  starterCode: string;
   tests: Test[];
   functionName: string;
 }
 
-export function TestPanel({ tests, functionName }: TestPanelProps) {
+export function TestPanel({ problemId, starterCode, tests, functionName }: TestPanelProps) {
   const { t } = useLocale();
   const { bottomTab, setBottomTab, runResult } = useProblemStore();
 
@@ -42,7 +44,7 @@ export function TestPanel({ tests, functionName }: TestPanelProps) {
           <TestResultsView result={runResult} tests={tests} functionName={functionName} />
         </Tabs.Content>
         <Tabs.Content value="submissions" className="flex-1 overflow-hidden">
-          <SubmissionHistory />
+          <SubmissionHistory problemId={problemId} starterCode={starterCode} />
         </Tabs.Content>
       </Tabs.Root>
     </div>

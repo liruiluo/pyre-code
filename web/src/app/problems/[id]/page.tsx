@@ -18,7 +18,7 @@ import { useProblemStore } from '@/store/problemStore';
 import { useLocale } from '@/context/LocaleContext';
 import { useTheme } from '@/context/ThemeContext';
 import type { Problem, ProgressMap, SubmissionResult, LearningPath, LearningPathProblemSummary, SubmissionHistory } from '@/lib/types';
-import { loadCodeDraft, saveCodeDraft } from '@/lib/codeDraft';
+import { isStaleCodeDraft, loadCodeDraft, saveCodeDraft } from '@/lib/codeDraft';
 
 function FlameGlyph() {
   return (
@@ -68,7 +68,13 @@ function WorkspacePageNew() {
       .then((data) => {
         setProblem(data);
         const cachedCode = loadCodeDraft(id);
-        setCurrentCode(cachedCode ?? data.starterCode ?? '');
+        const starterCode = data.starterCode ?? '';
+        if (cachedCode && isStaleCodeDraft(id, cachedCode)) {
+          setCurrentCode(starterCode);
+          saveCodeDraft(id, starterCode);
+        } else {
+          setCurrentCode(cachedCode ?? starterCode);
+        }
         codeReadyRef.current = true;
         setSubmissionResult(null);
         resetTestPanel();
@@ -274,7 +280,12 @@ function WorkspacePageNew() {
         }
         bottom={
           <div className="flex flex-col h-full">
-            <TestPanel tests={problem.tests} functionName={problem.functionName} />
+            <TestPanel
+              problemId={id}
+              starterCode={problem.starterCode ?? ''}
+              tests={problem.tests}
+              functionName={problem.functionName}
+            />
             <ActionBar onSubmit={handleSubmit} onRun={handleRun} isSubmitting={isSubmitting} isRunning={isRunning} attemptCount={submissionHistory.length} />
           </div>
         }
