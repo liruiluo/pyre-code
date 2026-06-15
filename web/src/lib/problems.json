@@ -2518,6 +2518,308 @@
           "code": "\nimport torch\nnew_logps = torch.randn(4, 3, requires_grad=True)\nold_logps = torch.randn(4, 3, requires_grad=True)\nrewards = torch.randn(4, 3, requires_grad=True)\nvalues = torch.randn(4, 4, requires_grad=True)\ndones = torch.zeros(4, 3)\nloss = {fn}(new_logps, old_logps, rewards, values, dones)\nloss.backward()\nassert new_logps.grad is not None, 'Actor gradients should flow through new_logps'\nassert old_logps.grad is None, 'old_logps should be treated as rollout constants'\nassert rewards.grad is None, 'rewards should be treated as rollout constants'\nassert values.grad is None, 'values should be treated as rollout constants for GAE'\n"
         }
       ]
+    },
+    {
+      "id": "learnable_pe",
+      "title": "Learnable Position Encoding",
+      "titleZh": "可学习位置编码",
+      "difficulty": "Easy",
+      "functionName": "LearnablePositionEncoding",
+      "hint": "1. Create `self.position_embedding = nn.Embedding(max_len, d_model)`\n2. For `x` with length T, make positions `torch.arange(T, device=x.device)`\n3. Add the position vectors with broadcasting over the batch dimension",
+      "hintZh": "1. 创建 `self.position_embedding = nn.Embedding(max_len, d_model)`\n2. 对长度 T 的 `x`，构造 `torch.arange(T, device=x.device)`\n3. 通过 batch 维广播加上位置向量",
+      "descriptionEn": "Implement learnable absolute position encoding.\n\nUnlike sinusoidal position encoding, learnable PE stores one trainable vector per position and adds it to token embeddings.\n\n**Signature:** `LearnablePositionEncoding(max_len, d_model)`\n\n**Forward:** `forward(x) -> Tensor`\n- `x` — token embeddings of shape `(B, T, d_model)`\n\n**Returns:** `x + position_embedding[0:T]` with the same shape\n\n**Constraints:**\n- Use `nn.Embedding(max_len, d_model)`\n- Position ids should start at 0 for each sequence",
+      "descriptionZh": "实现可学习绝对位置编码。\n\n不同于正弦位置编码，可学习 PE 为每个位置存储一个可训练向量，并加到 token embedding 上。\n\n**签名:** `LearnablePositionEncoding(max_len, d_model)`\n\n**前向传播:** `forward(x) -> Tensor`\n- `x` — token embedding，形状 `(B, T, d_model)`\n\n**返回:** 形状相同的 `x + position_embedding[0:T]`\n\n**约束:**\n- 使用 `nn.Embedding(max_len, d_model)`\n- 每个序列的位置 id 从 0 开始",
+      "tests": [
+        {
+          "name": "Is nn.Module and keeps shape",
+          "code": "\nimport torch, torch.nn as nn\npe = {fn}(max_len=16, d_model=8)\nassert isinstance(pe, nn.Module)\nx = torch.zeros(2, 5, 8)\nout = pe.forward(x)\nassert out.shape == x.shape, f'Shape mismatch: {out.shape}'\n"
+        },
+        {
+          "name": "Uses nn.Embedding with expected shape",
+          "code": "\nimport torch, torch.nn as nn\npe = {fn}(max_len=10, d_model=6)\nassert isinstance(pe.position_embedding, nn.Embedding)\nassert pe.position_embedding.weight.shape == (10, 6)\n"
+        },
+        {
+          "name": "Adds positions in order",
+          "code": "\nimport torch\npe = {fn}(max_len=6, d_model=3)\nwith torch.no_grad():\n    pe.position_embedding.weight.copy_(torch.arange(18, dtype=torch.float32).view(6, 3))\nx = torch.ones(2, 4, 3)\nout = pe.forward(x)\nexpected = x + torch.arange(12, dtype=torch.float32).view(4, 3).unsqueeze(0)\nassert torch.allclose(out, expected), f'{out} vs {expected}'\n"
+        },
+        {
+          "name": "Gradients reach position embeddings",
+          "code": "\nimport torch\npe = {fn}(max_len=8, d_model=4)\nx = torch.randn(2, 5, 4, requires_grad=True)\npe.forward(x).sum().backward()\nassert x.grad is not None\nassert pe.position_embedding.weight.grad is not None\nassert pe.position_embedding.weight.grad[:5].abs().sum() > 0\nassert pe.position_embedding.weight.grad[5:].abs().sum() == 0, 'Unused positions should have zero gradient'\n"
+        }
+      ]
+    },
+    {
+      "id": "temperature_sampling",
+      "title": "Temperature Sampling",
+      "titleZh": "温度采样",
+      "difficulty": "Easy",
+      "functionName": "temperature_sampling",
+      "hint": "1. If `temperature == 0`, return `torch.argmax(logits).item()`\n2. Otherwise compute `probs = softmax(logits / temperature)`\n3. Return `torch.multinomial(probs, 1).item()`",
+      "hintZh": "1. 如果 `temperature == 0`，返回 `torch.argmax(logits).item()`\n2. 否则计算 `probs = softmax(logits / temperature)`\n3. 返回 `torch.multinomial(probs, 1).item()`",
+      "descriptionEn": "Implement temperature sampling for language-model decoding.\n\nTemperature rescales logits before softmax: lower values make the distribution sharper, higher values make it flatter.\n\n**Signature:** `temperature_sampling(logits, temperature=1.0) -> int`\n\n**Parameters:**\n- `logits` — raw logits over vocabulary, shape `(V,)`\n- `temperature` — sampling temperature; `0` means greedy argmax\n\n**Returns:** sampled token index as a Python int\n\n**Constraints:**\n- `temperature=0` should return `argmax`\n- For positive temperature, sample from `softmax(logits / temperature)`",
+      "descriptionZh": "实现语言模型解码中的温度采样。\n\nTemperature 在 softmax 前缩放 logits：温度越低分布越尖锐，温度越高分布越平坦。\n\n**签名:** `temperature_sampling(logits, temperature=1.0) -> int`\n\n**参数:**\n- `logits` — 词表上的原始 logits，形状 `(V,)`\n- `temperature` — 采样温度；`0` 表示贪心 argmax\n\n**返回:** Python int 类型的采样 token index\n\n**约束:**\n- `temperature=0` 应返回 `argmax`\n- 正温度下从 `softmax(logits / temperature)` 中采样",
+      "tests": [
+        {
+          "name": "temperature=0 returns argmax",
+          "code": "\nimport torch\nlogits = torch.tensor([1.0, 3.0, 2.0])\nfor _ in range(10):\n    assert {fn}(logits, temperature=0.0) == 1\n"
+        },
+        {
+          "name": "Low temperature concentrates on argmax",
+          "code": "\nimport torch\nlogits = torch.tensor([1.0, 4.0, 2.0])\ncounts = [0, 0, 0]\nfor seed in range(80):\n    torch.manual_seed(seed)\n    counts[{fn}(logits, temperature=0.05)] += 1\nassert counts[1] >= 75, f'Low temperature should mostly choose argmax, got {counts}'\n"
+        },
+        {
+          "name": "High temperature allows multiple tokens",
+          "code": "\nimport torch\nlogits = torch.tensor([0.0, 1.0, 2.0, 3.0])\nseen = set()\nfor seed in range(200):\n    torch.manual_seed(seed)\n    seen.add({fn}(logits, temperature=5.0))\nassert len(seen) >= 3, f'High temperature should sample diverse tokens, saw {seen}'\n"
+        },
+        {
+          "name": "Returns Python int in range",
+          "code": "\nimport torch\nlogits = torch.randn(17)\ntorch.manual_seed(0)\ntoken = {fn}(logits, temperature=1.0)\nassert isinstance(token, int), f'Return value should be int, got {type(token)}'\nassert 0 <= token < 17\n"
+        }
+      ]
+    },
+    {
+      "id": "adamw",
+      "title": "AdamW Optimizer",
+      "titleZh": "AdamW 优化器",
+      "difficulty": "Medium",
+      "functionName": "MyAdamW",
+      "hint": "1. Under `torch.no_grad()`, first apply `p *= 1 - lr * weight_decay`\n2. Update Adam moments and bias-correct them\n3. Apply `p -= lr * m_hat / (sqrt(v_hat) + eps)`",
+      "hintZh": "1. 在 `torch.no_grad()` 下先执行 `p *= 1 - lr * weight_decay`\n2. 更新 Adam 一阶/二阶矩并做偏差校正\n3. 执行 `p -= lr * m_hat / (sqrt(v_hat) + eps)`",
+      "descriptionEn": "Implement AdamW from scratch.\n\nAdamW is Adam with decoupled weight decay: the parameter decay is applied directly to weights, instead of being mixed into the adaptive gradient moments.\n\n**Signature:** `MyAdamW(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)`\n\n**Methods:**\n- `step()` — apply decoupled weight decay and Adam update\n- `zero_grad()` — zero all parameter gradients\n\n**Constraints:**\n- Match `torch.optim.AdamW` numerically\n- Apply weight decay as `p *= (1 - lr * weight_decay)`",
+      "descriptionZh": "从零实现 AdamW。\n\nAdamW 是带解耦权重衰减的 Adam：weight decay 直接作用在参数上，而不是混入自适应梯度矩。\n\n**签名:** `MyAdamW(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)`\n\n**方法:**\n- `step()` — 执行解耦权重衰减和 Adam 更新\n- `zero_grad()` — 将所有参数梯度清零\n\n**约束:**\n- 与 `torch.optim.AdamW` 数值一致\n- weight decay 按 `p *= (1 - lr * weight_decay)` 直接作用于参数",
+      "tests": [
+        {
+          "name": "Matches torch.optim.AdamW",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nw1 = torch.randn(5, 3, requires_grad=True)\nw2 = w1.detach().clone().requires_grad_(True)\nopt1 = {fn}([w1], lr=0.002, betas=(0.8, 0.95), eps=1e-8, weight_decay=0.05)\nopt2 = torch.optim.AdamW([w2], lr=0.002, betas=(0.8, 0.95), eps=1e-8, weight_decay=0.05)\nfor _ in range(8):\n    loss1 = (w1 ** 2).sum() + 0.2 * w1.sum()\n    loss2 = (w2 ** 2).sum() + 0.2 * w2.sum()\n    loss1.backward(); loss2.backward()\n    opt1.step(); opt1.zero_grad()\n    opt2.step(); opt2.zero_grad()\nassert torch.allclose(w1.detach(), w2.detach(), atol=1e-6), f'Max diff: {(w1 - w2).abs().max().item():.8f}'\n"
+        },
+        {
+          "name": "Decoupled decay happens even with zero gradient",
+          "code": "\nimport torch\nw = torch.tensor([10.0], requires_grad=True)\nopt = {fn}([w], lr=0.1, weight_decay=0.2)\nw.grad = torch.zeros_like(w)\nopt.step()\nassert torch.allclose(w.detach(), torch.tensor([9.8]), atol=1e-6), f'Expected decoupled decay to 9.8, got {w.item():.6f}'\n"
+        },
+        {
+          "name": "No decay when grad is missing",
+          "code": "\nimport torch\nw = torch.tensor([10.0], requires_grad=True)\nopt = {fn}([w], lr=0.1, weight_decay=0.2)\nopt.step()\nassert torch.allclose(w.detach(), torch.tensor([10.0])), 'Parameters with grad=None should be skipped'\n"
+        },
+        {
+          "name": "zero_grad works",
+          "code": "\nimport torch\nw = torch.randn(3, requires_grad=True)\nopt = {fn}([w])\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0\n"
+        }
+      ]
+    },
+    {
+      "id": "kl_divergence",
+      "title": "KL Divergence from Logits",
+      "titleZh": "从 Logits 计算 KL 散度",
+      "difficulty": "Medium",
+      "functionName": "kl_divergence",
+      "hint": "1. `log_p = log_softmax(p_logits, dim=-1)`, `log_q = log_softmax(q_logits, dim=-1)`\n2. `p = exp(log_p)`\n3. `kl = (p * (log_p - log_q)).sum(dim=-1)`\n4. Apply the requested reduction",
+      "hintZh": "1. `log_p = log_softmax(p_logits, dim=-1)`, `log_q = log_softmax(q_logits, dim=-1)`\n2. `p = exp(log_p)`\n3. `kl = (p * (log_p - log_q)).sum(dim=-1)`\n4. 按 reduction 汇总",
+      "descriptionEn": "Implement KL divergence between two categorical distributions represented by logits.\n\nKL divergence is asymmetric: `D_KL(P || Q) = sum_i P(i) * (log P(i) - log Q(i))`. It is widely used in distillation and RLHF-style regularization.\n\n**Signature:** `kl_divergence(p_logits, q_logits, reduction='batchmean') -> Tensor`\n\n**Parameters:**\n- `p_logits`, `q_logits` — logits with class dimension last, shape `(..., V)`\n- `reduction` — one of `'none'`, `'sum'`, `'mean'`, `'batchmean'`\n\n**Returns:** KL divergence tensor or scalar, depending on reduction\n\n**Constraints:**\n- Use stable log-softmax, not `softmax().log()`\n- Compute `D_KL(P || Q)`, not `D_KL(Q || P)`",
+      "descriptionZh": "实现两个由 logits 表示的类别分布之间的 KL 散度。\n\nKL 散度不对称：`D_KL(P || Q) = sum_i P(i) * (log P(i) - log Q(i))`。它常用于知识蒸馏和 RLHF 风格正则。\n\n**签名:** `kl_divergence(p_logits, q_logits, reduction='batchmean') -> Tensor`\n\n**参数:**\n- `p_logits`, `q_logits` — 最后一维为类别维的 logits，形状 `(..., V)`\n- `reduction` — `'none'`, `'sum'`, `'mean'`, `'batchmean'` 之一\n\n**返回:** 根据 reduction 返回 KL 张量或标量\n\n**约束:**\n- 使用稳定的 log-softmax，不要 `softmax().log()`\n- 计算 `D_KL(P || Q)`，不是 `D_KL(Q || P)`",
+      "tests": [
+        {
+          "name": "Zero when distributions match",
+          "code": "\nimport torch\nlogits = torch.randn(4, 7)\nout = {fn}(logits, logits)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'KL(P||P) should be zero, got {out}'\n"
+        },
+        {
+          "name": "Matches manual formula",
+          "code": "\nimport torch\ntorch.manual_seed(0)\np_logits = torch.randn(3, 5)\nq_logits = torch.randn(3, 5)\nlog_p = torch.log_softmax(p_logits, dim=-1)\nlog_q = torch.log_softmax(q_logits, dim=-1)\nexpected = (log_p.exp() * (log_p - log_q)).sum(dim=-1).sum() / p_logits.shape[0]\nout = {fn}(p_logits, q_logits, reduction='batchmean')\nassert torch.allclose(out, expected, atol=1e-6), f'{out.item():.6f} vs {expected.item():.6f}'\n"
+        },
+        {
+          "name": "Asymmetry is preserved",
+          "code": "\nimport torch\np = torch.tensor([[3.0, 0.0, -1.0]])\nq = torch.tensor([[0.5, 0.0, -0.5]])\npq = {fn}(p, q)\nqp = {fn}(q, p)\nassert not torch.allclose(pq, qp), 'KL divergence should be asymmetric'\n"
+        },
+        {
+          "name": "none reduction returns per-row values",
+          "code": "\nimport torch\np = torch.randn(2, 4)\nq = torch.randn(2, 4)\nout = {fn}(p, q, reduction='none')\nassert out.shape == (2,), f'Expected per-row shape (2,), got {out.shape}'\nassert torch.all(out >= -1e-6), 'KL should be non-negative up to numerical tolerance'\n"
+        },
+        {
+          "name": "Numerical stability on large logits",
+          "code": "\nimport torch\np = torch.tensor([[1000.0, 0.0, -1000.0]])\nq = torch.tensor([[999.0, 1.0, -1000.0]])\nout = {fn}(p, q)\nassert not torch.isnan(out) and not torch.isinf(out), 'KL should remain finite for large logits'\n"
+        }
+      ]
+    },
+    {
+      "id": "kl_penalty",
+      "title": "RLHF KL Penalty",
+      "titleZh": "RLHF KL 惩罚",
+      "difficulty": "Medium",
+      "functionName": "kl_penalty",
+      "hint": "1. `kl = policy_logps - ref_logps.detach()`\n2. If `mask` is provided: `penalty = (kl * mask).sum() / mask.sum()`\n3. Return `beta * penalty`",
+      "hintZh": "1. `kl = policy_logps - ref_logps.detach()`\n2. 若提供 mask：`penalty = (kl * mask).sum() / mask.sum()`\n3. 返回 `beta * penalty`",
+      "descriptionEn": "Implement the sampled-token KL penalty commonly used in RLHF/PPO training.\n\nFor generated tokens, a simple per-token KL estimate is `policy_logp - reference_logp`; PPO-style RLHF adds `beta * KL` to discourage the policy from drifting too far from the reference model.\n\n**Signature:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_logps`, `ref_logps` — sampled-token log-probs with the same shape\n- `mask` — optional 0/1 mask for valid response tokens\n- `beta` — KL coefficient\n\n**Returns:** scalar penalty over valid tokens\n\n**Constraints:**\n- If `mask` is provided, average only over masked positions\n- `ref_logps` and `mask` should not receive gradients",
+      "descriptionZh": "实现 RLHF/PPO 训练中常见的采样 token KL 惩罚。\n\n对生成 token，一个简单的逐 token KL 估计是 `policy_logp - reference_logp`；PPO 风格 RLHF 加上 `beta * KL` 来限制策略偏离参考模型。\n\n**签名:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_logps`, `ref_logps` — 形状相同的采样 token 对数概率\n- `mask` — 可选 0/1 有效回复 token mask\n- `beta` — KL 系数\n\n**返回:** 有效 token 上的标量惩罚\n\n**约束:**\n- 若提供 `mask`，只在 mask 位置求平均\n- `ref_logps` 和 `mask` 不应接收梯度",
+      "tests": [
+        {
+          "name": "Unmasked mean penalty",
+          "code": "\nimport torch\npolicy = torch.tensor([-0.2, -0.4, -0.8])\nref = torch.tensor([-0.3, -0.5, -0.6])\nout = {fn}(policy, ref, beta=0.2)\nexpected = 0.2 * (policy - ref).mean()\nassert torch.allclose(out, expected, atol=1e-6), f'{out.item():.6f} vs {expected.item():.6f}'\n"
+        },
+        {
+          "name": "Masked positions only",
+          "code": "\nimport torch\npolicy = torch.tensor([[-0.2, -0.4, -0.8], [-1.0, -0.1, -0.3]])\nref = torch.tensor([[-0.3, -0.5, -0.6], [-1.2, -0.4, -0.1]])\nmask = torch.tensor([[1, 1, 0], [0, 1, 0]], dtype=torch.float32)\nout = {fn}(policy, ref, mask=mask, beta=0.5)\nexpected = 0.5 * (((policy - ref) * mask).sum() / mask.sum())\nassert torch.allclose(out, expected, atol=1e-6)\n"
+        },
+        {
+          "name": "Gradient flows only to policy logps",
+          "code": "\nimport torch\npolicy = torch.randn(4, requires_grad=True)\nref = torch.randn(4, requires_grad=True)\nloss = {fn}(policy, ref, beta=0.1)\nloss.backward()\nassert policy.grad is not None, 'policy_logps should receive gradient'\nassert ref.grad is None, 'ref_logps should be detached'\n"
+        },
+        {
+          "name": "Zero when policy equals reference",
+          "code": "\nimport torch\nlogps = torch.randn(3, 5)\nout = {fn}(logps, logps, mask=torch.ones_like(logps), beta=0.3)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6)\n"
+        }
+      ]
+    },
+    {
+      "id": "logistic_regression",
+      "title": "Logistic Regression",
+      "titleZh": "逻辑回归",
+      "difficulty": "Medium",
+      "functionName": "LogisticRegression",
+      "hint": "1. In `__init__`, create `self.linear = nn.Linear(in_features, 1)`\n2. `forward`: `sigmoid(self.linear(x)).squeeze(-1)`\n3. `loss`: binary cross-entropy on probabilities and float labels",
+      "hintZh": "1. 在 `__init__` 中创建 `self.linear = nn.Linear(in_features, 1)`\n2. `forward`: `sigmoid(self.linear(x)).squeeze(-1)`\n3. `loss`: 对概率和 float 标签计算二元交叉熵",
+      "descriptionEn": "Implement binary logistic regression with PyTorch tensors.\n\nLogistic regression is a linear classifier followed by a sigmoid, trained with binary cross-entropy.\n\n**Signature:** `LogisticRegression(in_features)`\n\n**Methods:**\n- `forward(x) -> Tensor` — return probabilities of shape `(N,)`\n- `loss(x, y) -> Tensor` — binary cross-entropy against labels `(N,)`\n- `predict(x, threshold=0.5) -> Tensor` — return 0/1 class predictions\n\n**Constraints:**\n- The module should inherit from `nn.Module`\n- Use an `nn.Linear(in_features, 1)` layer",
+      "descriptionZh": "用 PyTorch Tensor 实现二分类逻辑回归。\n\n逻辑回归是线性分类器加 sigmoid，用二元交叉熵训练。\n\n**签名:** `LogisticRegression(in_features)`\n\n**方法:**\n- `forward(x) -> Tensor` — 返回形状 `(N,)` 的正类概率\n- `loss(x, y) -> Tensor` — 对标签 `(N,)` 计算二元交叉熵\n- `predict(x, threshold=0.5) -> Tensor` — 返回 0/1 分类结果\n\n**约束:**\n- 模块应继承 `nn.Module`\n- 使用 `nn.Linear(in_features, 1)` 层",
+      "tests": [
+        {
+          "name": "Is nn.Module and returns probability shape",
+          "code": "\nimport torch, torch.nn as nn\nmodel = {fn}(3)\nassert isinstance(model, nn.Module), 'LogisticRegression should inherit nn.Module'\nout = model.forward(torch.randn(5, 3))\nassert out.shape == (5,), f'Expected (5,), got {out.shape}'\nassert torch.all((out >= 0) & (out <= 1)), 'Outputs should be probabilities in [0, 1]'\n"
+        },
+        {
+          "name": "Known weights give known probabilities",
+          "code": "\nimport torch\nmodel = {fn}(2)\nwith torch.no_grad():\n    model.linear.weight.copy_(torch.tensor([[1.0, -1.0]]))\n    model.linear.bias.copy_(torch.tensor([0.5]))\nx = torch.tensor([[1.0, 0.0], [0.0, 1.0]])\nexpected = torch.sigmoid(torch.tensor([1.5, -0.5]))\nout = model.forward(x)\nassert torch.allclose(out, expected, atol=1e-6), f'{out} vs {expected}'\n"
+        },
+        {
+          "name": "Loss matches BCE",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nmodel = {fn}(4)\nx = torch.randn(6, 4)\ny = torch.tensor([0, 1, 1, 0, 1, 0], dtype=torch.float32)\nloss = model.loss(x, y)\nref = torch.nn.functional.binary_cross_entropy(model.forward(x), y)\nassert loss.dim() == 0\nassert torch.allclose(loss, ref, atol=1e-6), f'{loss.item():.6f} vs {ref.item():.6f}'\n"
+        },
+        {
+          "name": "Predict threshold",
+          "code": "\nimport torch\nmodel = {fn}(1)\nwith torch.no_grad():\n    model.linear.weight.fill_(10.0)\n    model.linear.bias.zero_()\npred = model.predict(torch.tensor([[-1.0], [0.0], [1.0]]), threshold=0.5)\nassert torch.equal(pred, torch.tensor([0, 1, 1])), f'Unexpected predictions: {pred}'\n"
+        },
+        {
+          "name": "Gradient flow",
+          "code": "\nimport torch\nmodel = {fn}(3)\nx = torch.randn(8, 3)\ny = torch.randint(0, 2, (8,), dtype=torch.float32)\nloss = model.loss(x, y)\nloss.backward()\nassert model.linear.weight.grad is not None and model.linear.bias.grad is not None\n"
+        }
+      ]
+    },
+    {
+      "id": "reinforce_loss",
+      "title": "REINFORCE Policy Gradient Loss",
+      "titleZh": "REINFORCE 策略梯度损失",
+      "difficulty": "Medium",
+      "functionName": "reinforce_loss",
+      "hint": "1. `advantage = returns - baseline` if baseline is provided, otherwise `returns`\n2. `advantage = advantage.detach()`\n3. `loss = -(logps * advantage).mean()`",
+      "hintZh": "1. 如果有 baseline，`advantage = returns - baseline`，否则为 `returns`\n2. `advantage = advantage.detach()`\n3. `loss = -(logps * advantage).mean()`",
+      "descriptionEn": "Implement the REINFORCE policy-gradient loss.\n\nGiven sampled action log-probabilities and returns, REINFORCE minimizes `-log_prob * advantage`. An optional baseline reduces variance.\n\n**Signature:** `reinforce_loss(logps, returns, baseline=None) -> Tensor`\n\n**Parameters:**\n- `logps` — log-probabilities of sampled actions, shape `(B,)` or `(B, T)`\n- `returns` — Monte-Carlo returns with the same shape\n- `baseline` — optional scalar or tensor broadcastable to returns\n\n**Returns:** scalar policy loss\n\n**Constraints:**\n- Advantages should be detached so gradients flow only through `logps`\n- With no baseline, advantage equals returns",
+      "descriptionZh": "实现 REINFORCE 策略梯度损失。\n\n给定采样动作的对数概率和回报，REINFORCE 最小化 `-log_prob * advantage`。可选 baseline 用于降低方差。\n\n**签名:** `reinforce_loss(logps, returns, baseline=None) -> Tensor`\n\n**参数:**\n- `logps` — 采样动作的对数概率，形状 `(B,)` 或 `(B, T)`\n- `returns` — Monte-Carlo 回报，形状相同\n- `baseline` — 可广播到 returns 的可选标量或张量\n\n**返回:** 标量策略损失\n\n**约束:**\n- advantage 要 detach，使梯度只流经 `logps`\n- 没有 baseline 时 advantage 等于 returns",
+      "tests": [
+        {
+          "name": "Matches manual no-baseline formula",
+          "code": "\nimport torch\nlogps = torch.tensor([-0.2, -1.0, -0.5], requires_grad=True)\nreturns = torch.tensor([1.0, 0.5, -0.2])\nloss = {fn}(logps, returns)\nexpected = -(logps * returns).mean()\nassert torch.allclose(loss, expected, atol=1e-6), f'{loss.item():.6f} vs {expected.item():.6f}'\n"
+        },
+        {
+          "name": "Baseline subtracts from returns",
+          "code": "\nimport torch\nlogps = torch.tensor([-0.2, -1.0, -0.5])\nreturns = torch.tensor([1.0, 0.5, -0.2])\nbaseline = torch.tensor([0.2, 0.2, 0.2])\nloss = {fn}(logps, returns, baseline=baseline)\nexpected = -(logps * (returns - baseline)).mean()\nassert torch.allclose(loss, expected, atol=1e-6)\n"
+        },
+        {
+          "name": "Gradient flows to logps only",
+          "code": "\nimport torch\nlogps = torch.randn(4, requires_grad=True)\nreturns = torch.randn(4, requires_grad=True)\nloss = {fn}(logps, returns)\nloss.backward()\nassert logps.grad is not None, 'logps should receive gradient'\nassert returns.grad is None, 'returns/advantages should be detached'\n"
+        },
+        {
+          "name": "Supports sequence-shaped tensors",
+          "code": "\nimport torch\nlogps = torch.randn(2, 3, requires_grad=True)\nreturns = torch.randn(2, 3)\nloss = {fn}(logps, returns, baseline=returns.mean(dim=1, keepdim=True))\nassert loss.dim() == 0\nloss.backward()\nassert logps.grad.shape == logps.shape\n"
+        }
+      ]
+    },
+    {
+      "id": "sft_loss",
+      "title": "SFT Masked Language-Model Loss",
+      "titleZh": "SFT 掩码语言模型损失",
+      "difficulty": "Medium",
+      "functionName": "sft_loss",
+      "hint": "Use `F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=ignore_index)`.",
+      "hintZh": "使用 `F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=ignore_index)`。",
+      "descriptionEn": "Implement the supervised fine-tuning (SFT) loss for language models.\n\nSFT usually trains only selected response tokens: prompt tokens are masked out with `ignore_index=-100`, and valid tokens use cross-entropy over the vocabulary.\n\n**Signature:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**Parameters:**\n- `logits` — model logits, shape `(B, T, V)`\n- `labels` — token labels, shape `(B, T)`, with ignored positions set to `ignore_index`\n\n**Returns:** scalar mean cross-entropy over non-ignored positions\n\n**Constraints:**\n- Flatten batch/time before cross-entropy\n- Ignored positions must not contribute to loss or gradients",
+      "descriptionZh": "实现语言模型监督微调（SFT）损失。\n\nSFT 通常只训练被选中的回复 token：prompt token 用 `ignore_index=-100` 遮掉，有效 token 在词表上做交叉熵。\n\n**签名:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**参数:**\n- `logits` — 模型 logits，形状 `(B, T, V)`\n- `labels` — token 标签，形状 `(B, T)`，忽略位置设为 `ignore_index`\n\n**返回:** 非忽略位置上的平均交叉熵标量\n\n**约束:**\n- 先展平 batch/time 再计算交叉熵\n- 被忽略位置不得贡献 loss 或梯度",
+      "tests": [
+        {
+          "name": "Matches F.cross_entropy with ignore_index",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nB, T, V = 2, 4, 7\nlogits = torch.randn(B, T, V)\nlabels = torch.tensor([[1, 2, -100, 3], [-100, 4, 5, -100]])\nout = {fn}(logits, labels)\nref = torch.nn.functional.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=-100)\nassert torch.allclose(out, ref, atol=1e-6), f'{out.item():.6f} vs {ref.item():.6f}'\n"
+        },
+        {
+          "name": "Prompt-only positions are ignored",
+          "code": "\nimport torch\nlogits = torch.zeros(1, 3, 4)\nlabels_a = torch.tensor([[-100, 1, 2]])\nlabels_b = torch.tensor([[3, 1, 2]])\nloss_a = {fn}(logits, labels_a)\nloss_b = {fn}(logits[:, 1:], labels_a[:, 1:])\nloss_c = {fn}(logits, labels_b)\nassert torch.allclose(loss_a, loss_b, atol=1e-6), 'Ignored prompt token should not affect loss'\nassert torch.allclose(loss_a, torch.tensor(1.3862944), atol=1e-5)\nassert torch.allclose(loss_c, loss_a, atol=1e-6), 'Uniform logits have same CE, but valid count changes safely'\n"
+        },
+        {
+          "name": "Gradient only on valid positions",
+          "code": "\nimport torch\nlogits = torch.randn(1, 3, 5, requires_grad=True)\nlabels = torch.tensor([[-100, 2, -100]])\nloss = {fn}(logits, labels)\nloss.backward()\nassert logits.grad[0, 0].abs().sum() == 0, 'Ignored position 0 should have zero gradient'\nassert logits.grad[0, 1].abs().sum() > 0, 'Valid position should have gradient'\nassert logits.grad[0, 2].abs().sum() == 0, 'Ignored position 2 should have zero gradient'\n"
+        },
+        {
+          "name": "Scalar output",
+          "code": "\nimport torch\nout = {fn}(torch.randn(3, 5, 11), torch.randint(0, 11, (3, 5)))\nassert out.dim() == 0, 'Loss must be scalar'\n"
+        }
+      ]
+    },
+    {
+      "id": "sgd_momentum",
+      "title": "SGD with Momentum",
+      "titleZh": "带动量的 SGD",
+      "difficulty": "Medium",
+      "functionName": "SGDMomentum",
+      "hint": "1. Keep one velocity buffer per parameter\n2. Update `v = momentum * v + grad`\n3. Update parameter with `p -= lr * v` under `torch.no_grad()`",
+      "hintZh": "1. 为每个参数维护一个 velocity 缓存\n2. 更新 `v = momentum * v + grad`\n3. 在 `torch.no_grad()` 下执行 `p -= lr * v`",
+      "descriptionEn": "Implement stochastic gradient descent with momentum from scratch.\n\nMomentum keeps a velocity buffer for each parameter so repeated gradients accumulate direction and noisy gradients are smoothed.\n\n**Signature:** `SGDMomentum(params, lr=0.01, momentum=0.9)`\n\n**Methods:**\n- `step()` — update parameters using the momentum buffer\n- `zero_grad()` — zero all parameter gradients\n\n**Constraints:**\n- Match `torch.optim.SGD(..., momentum=momentum)` for the default PyTorch momentum rule\n- Skip parameters whose `.grad` is `None`",
+      "descriptionZh": "从零实现带动量的随机梯度下降。\n\nMomentum 为每个参数维护速度缓存，使连续梯度累积方向并平滑噪声梯度。\n\n**签名:** `SGDMomentum(params, lr=0.01, momentum=0.9)`\n\n**方法:**\n- `step()` — 使用动量缓存更新参数\n- `zero_grad()` — 将所有参数梯度清零\n\n**约束:**\n- 与 `torch.optim.SGD(..., momentum=momentum)` 的默认动量规则一致\n- 跳过 `.grad is None` 的参数",
+      "tests": [
+        {
+          "name": "Parameters change after step",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nw = torch.randn(4, 3, requires_grad=True)\nopt = {fn}([w], lr=0.1, momentum=0.9)\n(w ** 2).sum().backward()\nw_before = w.detach().clone()\nopt.step()\nassert not torch.equal(w.detach(), w_before), 'Parameters should change after step'\n"
+        },
+        {
+          "name": "Matches torch.optim.SGD with momentum",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nw1 = torch.randn(8, 4, requires_grad=True)\nw2 = w1.detach().clone().requires_grad_(True)\nopt1 = {fn}([w1], lr=0.05, momentum=0.8)\nopt2 = torch.optim.SGD([w2], lr=0.05, momentum=0.8)\nfor _ in range(6):\n    (w1.pow(2).sum() + w1.sum() * 0.1).backward()\n    (w2.pow(2).sum() + w2.sum() * 0.1).backward()\n    opt1.step(); opt1.zero_grad()\n    opt2.step(); opt2.zero_grad()\nassert torch.allclose(w1.detach(), w2.detach(), atol=1e-6), f'Max diff: {(w1 - w2).abs().max().item():.8f}'\n"
+        },
+        {
+          "name": "Momentum accumulates across steps",
+          "code": "\nimport torch\nw = torch.tensor([1.0], requires_grad=True)\nopt = {fn}([w], lr=1.0, momentum=0.5)\nw.grad = torch.tensor([2.0])\nopt.step()\nassert torch.allclose(w.detach(), torch.tensor([-1.0]))\nw.grad = torch.tensor([2.0])\nopt.step()\n# velocity = 0.5 * 2 + 2 = 3, so w = -1 - 3 = -4\nassert torch.allclose(w.detach(), torch.tensor([-4.0]))\n"
+        },
+        {
+          "name": "zero_grad works",
+          "code": "\nimport torch\nw = torch.randn(4, requires_grad=True)\nopt = {fn}([w])\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0, 'zero_grad should clear gradients'\n"
+        }
+      ]
+    },
+    {
+      "id": "mqa",
+      "title": "Multi-Query Attention",
+      "titleZh": "多查询注意力（MQA）",
+      "difficulty": "Hard",
+      "functionName": "MultiQueryAttention",
+      "hint": "1. `q`: `(B, H, T, d_k)`; `k/v`: `(B, 1, T, d_k)`\n2. Expand `k/v` with `.expand(B, H, T, d_k)`\n3. Compute scaled dot-product attention and project back with `W_o`",
+      "hintZh": "1. `q`: `(B, H, T, d_k)`；`k/v`: `(B, 1, T, d_k)`\n2. 用 `.expand(B, H, T, d_k)` 扩展 `k/v`\n3. 计算缩放点积注意力并用 `W_o` 投影回去",
+      "descriptionEn": "Implement Multi-Query Attention (MQA).\n\nMQA keeps many query heads but shares a single key head and a single value head across all query heads, reducing KV-cache memory during decoding.\n\n**Signature:** `MultiQueryAttention(d_model, num_heads)`\n\n**Forward:** `forward(x) -> Tensor`\n- `x` — input tensor `(B, T, d_model)`\n\n**Returns:** attention output `(B, T, d_model)`\n\n**Constraints:**\n- `W_q` projects to `d_model`\n- `W_k` and `W_v` each project to one head dimension `d_model // num_heads`\n- Expand K/V to all query heads before scaled dot-product attention",
+      "descriptionZh": "实现多查询注意力（MQA）。\n\nMQA 保留多个 query head，但所有 query head 共享一个 key head 和一个 value head，从而降低解码阶段 KV cache 内存。\n\n**签名:** `MultiQueryAttention(d_model, num_heads)`\n\n**前向传播:** `forward(x) -> Tensor`\n- `x` — 输入张量 `(B, T, d_model)`\n\n**返回:** 注意力输出 `(B, T, d_model)`\n\n**约束:**\n- `W_q` 投影到 `d_model`\n- `W_k` 和 `W_v` 各投影到一个 head 维度 `d_model // num_heads`\n- 在缩放点积注意力前将 K/V 扩展到所有 query head",
+      "tests": [
+        {
+          "name": "Is nn.Module and output shape",
+          "code": "\nimport torch, torch.nn as nn\ntorch.manual_seed(0)\nmqa = {fn}(d_model=32, num_heads=8)\nassert isinstance(mqa, nn.Module)\nout = mqa.forward(torch.randn(2, 5, 32))\nassert out.shape == (2, 5, 32), f'Shape mismatch: {out.shape}'\n"
+        },
+        {
+          "name": "Projection shapes use one KV head",
+          "code": "\nimport torch, torch.nn as nn\nmqa = {fn}(d_model=32, num_heads=8)\nd_k = 32 // 8\nassert mqa.W_q.weight.shape == (32, 32)\nassert mqa.W_k.weight.shape == (d_k, 32), f'W_k shape {mqa.W_k.weight.shape}'\nassert mqa.W_v.weight.shape == (d_k, 32), f'W_v shape {mqa.W_v.weight.shape}'\nassert isinstance(mqa.W_o, nn.Linear)\n"
+        },
+        {
+          "name": "All heads share the same K values",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nD, H = 16, 4\nmqa = {fn}(D, H)\nx = torch.randn(1, 3, D)\nd_k = D // H\nk = mqa.W_k(x).view(1, 1, 3, d_k)\nk_exp = k.expand(1, H, 3, d_k)\nassert torch.equal(k_exp[:, 0], k_exp[:, 1])\nassert torch.equal(k_exp[:, 1], k_exp[:, 2])\n"
+        },
+        {
+          "name": "Matches manual computation for one example",
+          "code": "\nimport torch, math\ntorch.manual_seed(0)\nD, H = 8, 2\nmqa = {fn}(D, H)\nx = torch.randn(1, 4, D)\nout = mqa.forward(x)\nd_k = D // H\nq = mqa.W_q(x).view(1, 4, H, d_k).transpose(1, 2)\nk = mqa.W_k(x).view(1, 1, 4, d_k).expand(1, H, 4, d_k)\nv = mqa.W_v(x).view(1, 1, 4, d_k).expand(1, H, 4, d_k)\nweights = torch.softmax(torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k), dim=-1)\nmanual = torch.matmul(weights, v).transpose(1, 2).contiguous().view(1, 4, D)\nmanual = mqa.W_o(manual)\nassert torch.allclose(out, manual, atol=1e-6)\n"
+        },
+        {
+          "name": "Gradient flow",
+          "code": "\nimport torch\nmqa = {fn}(16, 4)\nx = torch.randn(2, 3, 16, requires_grad=True)\nmqa.forward(x).sum().backward()\nassert x.grad is not None\nassert mqa.W_q.weight.grad is not None and mqa.W_k.weight.grad is not None and mqa.W_v.weight.grad is not None\n"
+        }
+      ]
     }
   ]
 }

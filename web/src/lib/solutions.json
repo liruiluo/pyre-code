@@ -143,6 +143,20 @@
       }
     ]
   },
+  "learnable_pe": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class LearnablePositionEncoding(nn.Module):\n    def __init__(self, max_len, d_model):\n        super().__init__()\n        self.position_embedding = nn.Embedding(max_len, d_model)\n\n    def forward(self, x):\n        seq_len = x.shape[1]\n        positions = torch.arange(seq_len, device=x.device)\n        pos = self.position_embedding(positions)\n        return x + pos.unsqueeze(0)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "pe = LearnablePositionEncoding(max_len=16, d_model=8)\nx = torch.zeros(2, 5, 8)\nprint(pe.forward(x).shape)",
+        "role": "demo"
+      }
+    ]
+  },
   "max_pool2d": {
     "cells": [
       {
@@ -227,6 +241,20 @@
       }
     ]
   },
+  "temperature_sampling": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def temperature_sampling(logits, temperature=1.0):\n    if temperature == 0:\n        return torch.argmax(logits).item()\n    probs = torch.softmax(logits / temperature, dim=-1)\n    return torch.multinomial(probs, 1).item()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "logits = torch.tensor([1.0, 3.0, 2.0])\nprint('greedy:', temperature_sampling(logits, temperature=0.0))\nprint('sample:', temperature_sampling(logits, temperature=1.0))",
+        "role": "demo"
+      }
+    ]
+  },
   "weight_init": {
     "cells": [
       {
@@ -279,6 +307,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(0)\nw = torch.randn(4, 3, requires_grad=True)\nopt = MyAdam([w], lr=0.01)\nfor i in range(5):\n    loss = (w ** 2).sum()\n    loss.backward()\n    opt.step()\n    opt.zero_grad()\n    print(f'Step {i}: loss={loss.item():.4f}')",
+        "role": "demo"
+      }
+    ]
+  },
+  "adamw": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class MyAdamW:\n    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,\n                 weight_decay=0.01):\n        self.params = list(params)\n        self.lr = lr\n        self.beta1, self.beta2 = betas\n        self.eps = eps\n        self.weight_decay = weight_decay\n        self.t = [0 for _ in self.params]\n        self.m = [torch.zeros_like(p) for p in self.params]\n        self.v = [torch.zeros_like(p) for p in self.params]\n\n    def step(self):\n        with torch.no_grad():\n            for i, p in enumerate(self.params):\n                if p.grad is None:\n                    continue\n                self.t[i] += 1\n                if self.weight_decay != 0:\n                    p *= 1 - self.lr * self.weight_decay\n                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * p.grad\n                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * p.grad ** 2\n                m_hat = self.m[i] / (1 - self.beta1 ** self.t[i])\n                v_hat = self.v[i] / (1 - self.beta2 ** self.t[i])\n                p -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "w = torch.randn(4, requires_grad=True)\nopt = MyAdamW([w], lr=0.01, weight_decay=0.1)\nfor step in range(3):\n    (w ** 2).sum().backward()\n    opt.step()\n    opt.zero_grad()\n    print(step, w.norm().item())",
         "role": "demo"
       }
     ]
@@ -483,6 +525,34 @@
       }
     ]
   },
+  "kl_divergence": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def kl_divergence(p_logits, q_logits, reduction='batchmean'):\n    log_p = torch.log_softmax(p_logits, dim=-1)\n    log_q = torch.log_softmax(q_logits, dim=-1)\n    kl = (log_p.exp() * (log_p - log_q)).sum(dim=-1)\n    if reduction == 'none':\n        return kl\n    if reduction == 'sum':\n        return kl.sum()\n    if reduction == 'mean':\n        return kl.mean()\n    if reduction == 'batchmean':\n        return kl.sum() / p_logits.shape[0]\n    raise ValueError(\"reduction must be one of 'none', 'sum', 'mean', 'batchmean'\")",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "p_logits = torch.tensor([[2.0, 0.0, -1.0]])\nq_logits = torch.tensor([[0.0, 2.0, -1.0]])\nprint('D_KL(P||Q):', kl_divergence(p_logits, q_logits).item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "kl_penalty": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1):\n    kl = policy_logps - ref_logps.detach()\n    if mask is None:\n        return beta * kl.mean()\n    mask = mask.to(dtype=kl.dtype).detach()\n    return beta * (kl * mask).sum() / mask.sum()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "policy = torch.tensor([-0.2, -0.4, -0.8])\nref = torch.tensor([-0.3, -0.5, -0.6])\nprint('KL penalty:', kl_penalty(policy, ref, beta=0.2).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "layernorm": {
     "cells": [
       {
@@ -521,6 +591,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(42)\nX = torch.randn(100, 3)\ntrue_w = torch.tensor([2.0, -1.0, 0.5])\ny = X @ true_w + 3.0\n\nmodel = LinearRegression()\nfor name, method in [(\"Closed-form\", model.closed_form),\n                      (\"Grad Descent\", lambda X, y: model.gradient_descent(X, y, lr=0.05, steps=2000)),\n                      (\"nn.Linear\", lambda X, y: model.nn_linear(X, y, lr=0.05, steps=2000))]:\n    w, b = method(X, y)\n    print(f\"{name:13s}  w={w.tolist()}  b={b.item():.4f}\")\nprint(f\"{'True':13s}  w={true_w.tolist()}  b=3.0000\")",
+        "role": "demo"
+      }
+    ]
+  },
+  "logistic_regression": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class LogisticRegression(nn.Module):\n    def __init__(self, in_features):\n        super().__init__()\n        self.linear = nn.Linear(in_features, 1)\n\n    def forward(self, x):\n        return torch.sigmoid(self.linear(x)).squeeze(-1)\n\n    def loss(self, x, y):\n        return F.binary_cross_entropy(self.forward(x), y.float())\n\n    def predict(self, x, threshold=0.5):\n        return (self.forward(x) >= threshold).long()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "model = LogisticRegression(2)\nx = torch.randn(4, 2)\ny = torch.tensor([0, 1, 0, 1], dtype=torch.float32)\nprint('prob:', model.forward(x))\nprint('loss:', model.loss(x, y).item())",
         "role": "demo"
       }
     ]
@@ -618,6 +702,20 @@
       }
     ]
   },
+  "reinforce_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def reinforce_loss(logps, returns, baseline=None):\n    if baseline is None:\n        advantages = returns\n    else:\n        advantages = returns - baseline\n    advantages = advantages.detach()\n    return -(logps * advantages).mean()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "logps = torch.tensor([-0.2, -1.0, -0.5])\nreturns = torch.tensor([1.0, 0.5, -0.2])\nprint('REINFORCE loss:', reinforce_loss(logps, returns).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "reward_model": {
     "cells": [
       {
@@ -656,6 +754,34 @@
       {
         "type": "code",
         "source": "q = torch.randn(1, 8, 16)\nk = torch.randn(1, 8, 16)\nqr, kr = apply_rope(q, k)\nprint('Shape preserved:', qr.shape == q.shape)\nprint('Norm preserved:', torch.allclose(q.norm(dim=-1), qr.norm(dim=-1), atol=1e-4))",
+        "role": "demo"
+      }
+    ]
+  },
+  "sft_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def sft_loss(logits, labels, ignore_index=-100):\n    vocab_size = logits.shape[-1]\n    return F.cross_entropy(\n        logits.reshape(-1, vocab_size),\n        labels.reshape(-1),\n        ignore_index=ignore_index,\n    )",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "logits = torch.randn(2, 4, 10)\nlabels = torch.tensor([[1, 2, -100, 3], [-100, 4, 5, -100]])\nprint('SFT loss:', sft_loss(logits, labels).item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "sgd_momentum": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class SGDMomentum:\n    def __init__(self, params, lr=0.01, momentum=0.9):\n        self.params = list(params)\n        self.lr = lr\n        self.momentum = momentum\n        self.velocity = [torch.zeros_like(p) for p in self.params]\n\n    def step(self):\n        with torch.no_grad():\n            for i, p in enumerate(self.params):\n                if p.grad is None:\n                    continue\n                self.velocity[i] = self.momentum * self.velocity[i] + p.grad\n                p -= self.lr * self.velocity[i]\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "w = torch.tensor([1.0], requires_grad=True)\nopt = SGDMomentum([w], lr=0.1, momentum=0.9)\nfor step in range(3):\n    (w ** 2).sum().backward()\n    opt.step()\n    opt.zero_grad()\n    print(step, w.item())",
         "role": "demo"
       }
     ]
@@ -963,6 +1089,20 @@
       {
         "type": "code",
         "source": "moe = MixtureOfExperts(32, 64, num_experts=4, top_k=2)\nx = torch.randn(2, 8, 32)\nprint('Output:', moe(x).shape)\nprint('Params:', sum(p.numel() for p in moe.parameters()))",
+        "role": "demo"
+      }
+    ]
+  },
+  "mqa": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class MultiQueryAttention(nn.Module):\n    def __init__(self, d_model, num_heads):\n        super().__init__()\n        self.num_heads = num_heads\n        self.d_k = d_model // num_heads\n        self.W_q = nn.Linear(d_model, d_model)\n        self.W_k = nn.Linear(d_model, self.d_k)\n        self.W_v = nn.Linear(d_model, self.d_k)\n        self.W_o = nn.Linear(d_model, d_model)\n\n    def forward(self, x):\n        B, T, _ = x.shape\n        q = self.W_q(x).view(B, T, self.num_heads, self.d_k).transpose(1, 2)\n        k = self.W_k(x).view(B, 1, T, self.d_k).expand(B, self.num_heads, T, self.d_k)\n        v = self.W_v(x).view(B, 1, T, self.d_k).expand(B, self.num_heads, T, self.d_k)\n        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)\n        weights = torch.softmax(scores, dim=-1)\n        attn = torch.matmul(weights, v)\n        out = attn.transpose(1, 2).contiguous().view(B, T, -1)\n        return self.W_o(out)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "mqa = MultiQueryAttention(32, 8)\nx = torch.randn(2, 5, 32)\nprint(mqa.forward(x).shape)",
         "role": "demo"
       }
     ]
