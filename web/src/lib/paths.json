@@ -24,7 +24,10 @@
         "attention",
         "mha",
         "mlp",
-        "gpt2_block"
+        "gpt2_block",
+        "manual_backprop",
+        "transformer_encoder_layer",
+        "transformer_decoder_layer"
       ],
       "prerequisites": []
     },
@@ -72,6 +75,7 @@
         "gpt2_block",
         "cross_entropy",
         "sft_loss",
+        "causal_lm_loss",
         "label_smoothing",
         "weight_init",
         "sgd",

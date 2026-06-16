@@ -95,5 +95,9 @@
   "softmax_regression": "class SoftmaxRegression(nn.Module):\n\n    def __init__(self, in_features, num_classes):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass\n\n    def loss(self, x, y):\n        pass\n\n    def predict(self, x):\n        pass",
   "transformer_ffn": "class TransformerFFN(nn.Module):\n\n    def __init__(self, d_model, d_ff, dropout=0.0):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
   "prenorm_postnorm": "class ResidualNormBlock(nn.Module):\n\n    def __init__(self, d_model, sublayer, mode='pre'):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
-  "continuous_batching": "def continuous_batching_schedule(requests, max_batch_size):\n    pass"
+  "continuous_batching": "def continuous_batching_schedule(requests, max_batch_size):\n    pass",
+  "causal_lm_loss": "def causal_lm_loss(logits, labels, ignore_index=-100):\n    pass",
+  "manual_backprop": "def tiny_mlp_backward(x, w1, b1, w2, b2, target):\n    pass",
+  "transformer_encoder_layer": "class TransformerEncoderLayer(nn.Module):\n\n    def __init__(self, d_model, num_heads, d_ff=None, dropout=0.0):\n        super().__init__()\n        pass\n\n    def forward(self, x):\n        pass",
+  "transformer_decoder_layer": "class TransformerDecoderLayer(nn.Module):\n\n    def __init__(self, d_model, num_heads, d_ff=None, dropout=0.0):\n        super().__init__()\n        pass\n\n    def forward(self, x, encoder_output):\n        pass"
 }

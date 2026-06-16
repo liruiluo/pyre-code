@@ -3047,6 +3047,138 @@
           "code": "\nimport torch\nffn = {fn}(d_model=12, d_ff=48)\nx = torch.randn(2, 3, 12, requires_grad=True)\nffn(x).sum().backward()\nassert x.grad is not None\nassert all(p.grad is not None for p in ffn.parameters()), 'All parameters should receive gradients'\n"
         }
       ]
+    },
+    {
+      "id": "causal_lm_loss",
+      "title": "Causal Language-Model Loss",
+      "titleZh": "因果语言模型损失",
+      "difficulty": "Medium",
+      "functionName": "causal_lm_loss",
+      "hint": "Shift first: `shift_logits = logits[:, :-1]`, `shift_labels = labels[:, 1:]`. Then call `F.cross_entropy(shift_logits.reshape(-1, V), shift_labels.reshape(-1), ignore_index=ignore_index)`.",
+      "hintZh": "先 shift：`shift_logits = logits[:, :-1]`，`shift_labels = labels[:, 1:]`。然后调用 `F.cross_entropy(shift_logits.reshape(-1, V), shift_labels.reshape(-1), ignore_index=ignore_index)`。",
+      "descriptionEn": "Implement the standard next-token language-model loss.\n\nAutoregressive language models predict token `t+1` from the logits at position `t`, so the logits and labels must be shifted before cross-entropy.\n\n**Signature:** `causal_lm_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**Parameters:**\n- `logits` — model logits of shape `(B, T, V)`\n- `labels` — token ids of shape `(B, T)`, with ignored positions set to `ignore_index`\n- `ignore_index` — label value skipped by cross-entropy\n\n**Returns:** scalar mean cross-entropy over valid next-token labels\n\n**Constraints:**\n- Use logits at positions `0..T-2` to predict labels at positions `1..T-1`\n- Flatten batch/time before cross-entropy\n- Ignored shifted labels must not contribute to loss or gradients",
+      "descriptionZh": "实现标准 next-token 语言模型损失。\n\n自回归语言模型用位置 `t` 的 logits 预测 token `t+1`，所以计算交叉熵前需要对 logits 和 labels 做 shift。\n\n**签名:** `causal_lm_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**参数:**\n- `logits` — 模型 logits，形状 `(B, T, V)`\n- `labels` — token id，形状 `(B, T)`，忽略位置设为 `ignore_index`\n- `ignore_index` — 交叉熵跳过的标签值\n\n**返回:** 有效 next-token 标签上的平均交叉熵标量\n\n**约束:**\n- 用位置 `0..T-2` 的 logits 预测位置 `1..T-1` 的 labels\n- 先展平 batch/time 再计算交叉熵\n- 被忽略的 shifted labels 不得贡献 loss 或梯度",
+      "tests": [
+        {
+          "name": "Matches PyTorch shifted cross-entropy",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(0)\nB, T, V = 3, 5, 11\nlogits = torch.randn(B, T, V)\nlabels = torch.randint(0, V, (B, T))\nout = {fn}(logits, labels)\nexpected = F.cross_entropy(logits[:, :-1, :].reshape(-1, V), labels[:, 1:].reshape(-1))\nassert torch.allclose(out, expected, atol=1e-6), f'{out} vs {expected}'\n"
+        },
+        {
+          "name": "Uses next-token shift, not same-position labels",
+          "code": "\nimport torch\nimport torch.nn.functional as F\nV = 4\nlogits = torch.full((1, 4, V), -10.0)\nlabels = torch.tensor([[3, 1, 2, 0]])\n# Correct shifted targets are [1, 2, 0]. Make those positions confident.\nlogits[0, 0, 1] = 10.0\nlogits[0, 1, 2] = 10.0\nlogits[0, 2, 0] = 10.0\n# Last position should be ignored by the shift.\nlogits[0, 3, 3] = 10.0\nloss = {fn}(logits, labels)\nassert loss.item() < 1e-4, f'Expected near-zero shifted loss, got {loss.item():.6f}'\nsame_position = F.cross_entropy(logits.reshape(-1, V), labels.reshape(-1))\nassert same_position.item() > 5.0, 'This test should distinguish shifted LM loss from same-position CE'\n"
+        },
+        {
+          "name": "Ignore index applies after shifting",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(1)\nB, T, V = 2, 6, 7\nlogits = torch.randn(B, T, V)\nlabels = torch.randint(0, V, (B, T))\nlabels[0, 2] = -100\nlabels[1, 5] = -100\nout = {fn}(logits, labels, ignore_index=-100)\nexpected = F.cross_entropy(\n    logits[:, :-1, :].reshape(-1, V),\n    labels[:, 1:].reshape(-1),\n    ignore_index=-100,\n)\nassert torch.allclose(out, expected, atol=1e-6), f'{out} vs {expected}'\n"
+        },
+        {
+          "name": "Gradient reaches used logits but not the final position",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nlogits = torch.randn(2, 4, 5, requires_grad=True)\nlabels = torch.randint(0, 5, (2, 4))\nloss = {fn}(logits, labels)\nloss.backward()\nassert logits.grad is not None, 'Missing gradient on logits'\nassert logits.grad[:, :-1, :].abs().sum() > 0, 'Used logits should receive gradient'\nassert torch.allclose(logits.grad[:, -1, :], torch.zeros_like(logits.grad[:, -1, :])), 'Final-position logits should be unused'\n"
+        }
+      ]
+    },
+    {
+      "id": "manual_backprop",
+      "title": "Manual Backpropagation for a Tiny MLP",
+      "titleZh": "手写 Tiny MLP 反向传播",
+      "difficulty": "Medium",
+      "functionName": "tiny_mlp_backward",
+      "hint": "Forward: `h_pre = x @ w1 + b1`, `h = relu(h_pre)`, `pred = h @ w2 + b2`. For mean MSE, `d_pred = 2 * (pred - target) / pred.numel()`. Then chain through `w2`, ReLU, and `w1`.",
+      "hintZh": "前向：`h_pre = x @ w1 + b1`，`h = relu(h_pre)`，`pred = h @ w2 + b2`。mean MSE 下 `d_pred = 2 * (pred - target) / pred.numel()`，再依次链式传过 `w2`、ReLU 和 `w1`。",
+      "descriptionEn": "Implement the forward and backward pass for a two-layer ReLU MLP without calling `.backward()`.\n\nThe network is `pred = relu(x @ w1 + b1) @ w2 + b2`, trained with mean squared error against `target`. Return both the scalar loss and manual parameter gradients.\n\n**Signature:** `tiny_mlp_backward(x, w1, b1, w2, b2, target) -> (loss, grads)`\n\n**Parameters:**\n- `x` — input tensor `(N, D)`\n- `w1`, `b1` — first-layer weight `(D, H)` and bias `(H,)`\n- `w2`, `b2` — second-layer weight `(H, C)` and bias `(C,)`\n- `target` — regression target `(N, C)`\n\n**Returns:** `(loss, (grad_w1, grad_b1, grad_w2, grad_b2))`\n\n**Constraints:**\n- Use MSE with mean reduction over all elements\n- Derive gradients manually with the chain rule\n- Do not call `loss.backward()` inside the function",
+      "descriptionZh": "不调用 `.backward()`，手写两层 ReLU MLP 的前向和反向传播。\n\n网络为 `pred = relu(x @ w1 + b1) @ w2 + b2`，用均方误差拟合 `target`。返回标量 loss 和手写参数梯度。\n\n**签名:** `tiny_mlp_backward(x, w1, b1, w2, b2, target) -> (loss, grads)`\n\n**参数:**\n- `x` — 输入张量 `(N, D)`\n- `w1`, `b1` — 第一层权重 `(D, H)` 和偏置 `(H,)`\n- `w2`, `b2` — 第二层权重 `(H, C)` 和偏置 `(C,)`\n- `target` — 回归目标 `(N, C)`\n\n**返回:** `(loss, (grad_w1, grad_b1, grad_w2, grad_b2))`\n\n**约束:**\n- MSE 对所有元素取平均\n- 用链式法则手动推导梯度\n- 函数内部不要调用 `loss.backward()`",
+      "tests": [
+        {
+          "name": "Returns scalar loss and four gradients",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nx = torch.randn(4, 3)\nw1 = torch.randn(3, 5)\nb1 = torch.randn(5)\nw2 = torch.randn(5, 2)\nb2 = torch.randn(2)\ntarget = torch.randn(4, 2)\nloss, grads = {fn}(x, w1, b1, w2, b2, target)\nassert isinstance(loss, torch.Tensor) and loss.shape == (), f'Loss should be scalar tensor, got {loss}'\nassert isinstance(grads, (tuple, list)) and len(grads) == 4, 'Return grads as (grad_w1, grad_b1, grad_w2, grad_b2)'\nfor grad, ref in zip(grads, (w1, b1, w2, b2)):\n    assert grad.shape == ref.shape, f'Gradient shape {grad.shape} should match {ref.shape}'\n"
+        },
+        {
+          "name": "Loss matches manual MSE",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nx = torch.randn(3, 4)\nw1 = torch.randn(4, 6)\nb1 = torch.randn(6)\nw2 = torch.randn(6, 3)\nb2 = torch.randn(3)\ntarget = torch.randn(3, 3)\nloss, _ = {fn}(x, w1, b1, w2, b2, target)\nexpected = ((torch.relu(x @ w1 + b1) @ w2 + b2 - target) ** 2).mean()\nassert torch.allclose(loss, expected, atol=1e-6), f'{loss} vs {expected}'\n"
+        },
+        {
+          "name": "Gradients match autograd",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nx = torch.randn(5, 3)\nw1 = torch.randn(3, 4, requires_grad=True)\nb1 = torch.randn(4, requires_grad=True)\nw2 = torch.randn(4, 2, requires_grad=True)\nb2 = torch.randn(2, requires_grad=True)\ntarget = torch.randn(5, 2)\nloss, grads = {fn}(x, w1, b1, w2, b2, target)\nref_pred = torch.relu(x @ w1 + b1) @ w2 + b2\nref_loss = ((ref_pred - target) ** 2).mean()\nref_loss.backward()\nfor name, grad, ref in zip(['w1', 'b1', 'w2', 'b2'], grads, [w1.grad, b1.grad, w2.grad, b2.grad]):\n    assert torch.allclose(grad, ref, atol=1e-5), f'{name} grad mismatch: max diff {(grad - ref).abs().max()}'\n"
+        },
+        {
+          "name": "Handles inactive ReLU units",
+          "code": "\nimport torch\nx = torch.ones(2, 3)\nw1 = -torch.ones(3, 4)\nb1 = -torch.ones(4)\nw2 = torch.randn(4, 2)\nb2 = torch.zeros(2)\ntarget = torch.ones(2, 2)\n_, (grad_w1, grad_b1, grad_w2, grad_b2) = {fn}(x, w1, b1, w2, b2, target)\nassert torch.allclose(grad_w1, torch.zeros_like(grad_w1)), 'Inactive ReLU should block w1 gradient'\nassert torch.allclose(grad_b1, torch.zeros_like(grad_b1)), 'Inactive ReLU should block b1 gradient'\nassert torch.allclose(grad_w2, torch.zeros_like(grad_w2)), 'Hidden activation is zero, so w2 gradient should be zero'\nassert torch.allclose(grad_b2, torch.full_like(grad_b2, -1.0)), f'b2 grad should be mean MSE gradient, got {grad_b2}'\n"
+        },
+        {
+          "name": "Does not populate .grad by side effect",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nx = torch.randn(2, 3)\nw1 = torch.randn(3, 4, requires_grad=True)\nb1 = torch.randn(4, requires_grad=True)\nw2 = torch.randn(4, 2, requires_grad=True)\nb2 = torch.randn(2, requires_grad=True)\ntarget = torch.randn(2, 2)\n{fn}(x, w1, b1, w2, b2, target)\nassert w1.grad is None and b1.grad is None and w2.grad is None and b2.grad is None, 'Do not call backward() or write parameter .grad inside the function'\n"
+        }
+      ]
+    },
+    {
+      "id": "transformer_decoder_layer",
+      "title": "Transformer Decoder Layer",
+      "titleZh": "Transformer 解码器层",
+      "difficulty": "Hard",
+      "functionName": "TransformerDecoderLayer",
+      "hint": "Use one masked self-attention block for `x`, one cross-attention block where Q comes from normalized decoder states and K/V come from `encoder_output`, then an FFN residual. The self-attention scores need an upper-triangular `-inf` mask.",
+      "hintZh": "先对 `x` 做带上三角 `-inf` 遮蔽的 self-attention；再做 cross-attention，其中 Q 来自归一化后的 decoder 状态，K/V 来自 `encoder_output`；最后接 FFN 残差。",
+      "descriptionEn": "Implement a pre-norm encoder-decoder Transformer decoder layer.\n\nA decoder layer first applies causal self-attention over the target sequence, then cross-attention from target queries to encoder keys/values, then a position-wise feed-forward network.\n\n**Signature:** `TransformerDecoderLayer(d_model, num_heads, d_ff=None, dropout=0.0)` (nn.Module)\n\n**Forward:** `forward(x, encoder_output) -> Tensor`\n- `x` — target-side input `(B, T, d_model)`\n- `encoder_output` — source-side encoded states `(B, S, d_model)`\n\n**Returns:** decoder output `(B, T, d_model)`\n\n**Constraints:**\n- Causal self-attention: target position `t` must not see future target positions\n- Cross-attention is not causal: every target position may attend to all encoder positions\n- Use three pre-norm residual blocks: self-attn, cross-attn, then FFN",
+      "descriptionZh": "实现 pre-norm 的 encoder-decoder Transformer 解码器层。\n\n解码器层先对目标序列做因果自注意力，再用目标 query 对 encoder key/value 做交叉注意力，最后接逐位置前馈网络。\n\n**签名:** `TransformerDecoderLayer(d_model, num_heads, d_ff=None, dropout=0.0)`（nn.Module）\n\n**前向传播:** `forward(x, encoder_output) -> Tensor`\n- `x` — 目标侧输入 `(B, T, d_model)`\n- `encoder_output` — 源侧 encoder 状态 `(B, S, d_model)`\n\n**返回:** decoder 输出 `(B, T, d_model)`\n\n**约束:**\n- 因果自注意力：目标位置 `t` 不能看到未来目标位置\n- 交叉注意力不因果：每个目标位置都可以关注所有 encoder 位置\n- 使用三段 pre-norm 残差：self-attn、cross-attn、FFN",
+      "tests": [
+        {
+          "name": "Module, output shape, and core attributes",
+          "code": "\nimport torch\nimport torch.nn as nn\nblock = {fn}(d_model=32, num_heads=4)\nassert isinstance(block, nn.Module)\nout = block(torch.randn(2, 5, 32), torch.randn(2, 7, 32))\nassert out.shape == (2, 5, 32), f'Output shape: {out.shape}'\nfor name in ['ln1', 'ln2', 'ln3', 'self_q', 'self_k', 'self_v', 'self_o', 'cross_q', 'cross_k', 'cross_v', 'cross_o', 'fc1', 'fc2']:\n    assert hasattr(block, name), f'Missing {name}'\n"
+        },
+        {
+          "name": "Causal target self-attention protects past positions",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nblock = {fn}(d_model=32, num_heads=4, dropout=0.0)\nblock.eval()\nx = torch.randn(1, 6, 32)\nenc = torch.randn(1, 5, 32)\nout1 = block(x, enc)\nx2 = x.clone()\nx2[:, 3:] = torch.randn(1, 3, 32)\nout2 = block(x2, enc)\nassert torch.allclose(out1[:, :3], out2[:, :3], atol=1e-5), 'Future target tokens affected past decoder outputs'\n"
+        },
+        {
+          "name": "Cross-attention lets encoder states affect every target position",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nblock = {fn}(d_model=32, num_heads=4, dropout=0.0)\nblock.eval()\nx = torch.randn(1, 4, 32)\nenc = torch.randn(1, 6, 32)\nout1 = block(x, enc)\nenc2 = enc.clone()\nenc2[:, -1] = torch.randn(1, 32)\nout2 = block(x, enc2)\nassert not torch.allclose(out1[:, 0], out2[:, 0], atol=1e-5), 'Changing encoder states should affect target position 0 through cross-attention'\n"
+        },
+        {
+          "name": "FFN uses requested hidden size",
+          "code": "\nblock = {fn}(d_model=16, num_heads=4, d_ff=48)\nassert block.fc1.weight.shape == (48, 16), f'fc1 shape: {block.fc1.weight.shape}'\nassert block.fc2.weight.shape == (16, 48), f'fc2 shape: {block.fc2.weight.shape}'\n"
+        },
+        {
+          "name": "Numerical composition matches reference",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(2)\nB, T, S, D, H = 2, 4, 5, 16, 4\nblock = {fn}(d_model=D, num_heads=H, d_ff=32, dropout=0.0)\nblock.eval()\nx = torch.randn(B, T, D)\nenc = torch.randn(B, S, D)\nout = block(x, enc)\n\ndef split_heads(t, heads, d_k):\n    return t.view(t.shape[0], t.shape[1], heads, d_k).transpose(1, 2)\n\nwith torch.no_grad():\n    d_k = D // H\n    y = block.ln1(x)\n    q = split_heads(block.self_q(y), H, d_k)\n    k = split_heads(block.self_k(y), H, d_k)\n    v = split_heads(block.self_v(y), H, d_k)\n    scores = q @ k.transpose(-2, -1) / (d_k ** 0.5)\n    mask = torch.triu(torch.ones(T, T, dtype=torch.bool), diagonal=1)\n    scores = scores.masked_fill(mask, float('-inf'))\n    self_ctx = (torch.softmax(scores, dim=-1) @ v).transpose(1, 2).contiguous().view(B, T, D)\n    x1 = x + block.self_o(self_ctx)\n\n    q2 = split_heads(block.cross_q(block.ln2(x1)), H, d_k)\n    k2 = split_heads(block.cross_k(enc), H, d_k)\n    v2 = split_heads(block.cross_v(enc), H, d_k)\n    cross_ctx = (torch.softmax(q2 @ k2.transpose(-2, -1) / (d_k ** 0.5), dim=-1) @ v2).transpose(1, 2).contiguous().view(B, T, D)\n    x2 = x1 + block.cross_o(cross_ctx)\n    expected = x2 + block.fc2(block.dropout(F.gelu(block.fc1(block.ln3(x2)))))\nassert torch.allclose(out, expected, atol=1e-5), f'Max diff {(out - expected).abs().max()}'\n"
+        },
+        {
+          "name": "Gradient flow",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nblock = {fn}(d_model=16, num_heads=4)\nx = torch.randn(2, 3, 16, requires_grad=True)\nenc = torch.randn(2, 5, 16, requires_grad=True)\nblock(x, enc).sum().backward()\nassert x.grad is not None and enc.grad is not None, 'Missing input gradients'\nassert all(p.grad is not None for p in block.parameters()), 'All parameters should receive gradients'\n"
+        }
+      ]
+    },
+    {
+      "id": "transformer_encoder_layer",
+      "title": "Transformer Encoder Layer",
+      "titleZh": "Transformer 编码器层",
+      "difficulty": "Hard",
+      "functionName": "TransformerEncoderLayer",
+      "hint": "Project normalized `x` into Q/K/V heads, compute unmasked scaled dot-product attention, project with `W_o`, add residual, then apply `fc1 -> GELU -> dropout -> fc2` to the second normalized residual.",
+      "hintZh": "把归一化后的 `x` 投影成 Q/K/V 多头，计算无遮挡缩放点积注意力，用 `W_o` 投影后做残差相加；再对第二个归一化残差应用 `fc1 -> GELU -> dropout -> fc2`。",
+      "descriptionEn": "Implement a pre-norm Transformer encoder layer, BERT-style.\n\nAn encoder layer uses bidirectional self-attention followed by a position-wise feed-forward network, each wrapped in residual connections. Unlike GPT decoding, it must not apply a causal mask.\n\n**Signature:** `TransformerEncoderLayer(d_model, num_heads, d_ff=None, dropout=0.0)` (nn.Module)\n\n**Forward:** `forward(x) -> Tensor`\n- `x` — input tensor `(B, S, d_model)`\n\n**Returns:** encoded tensor `(B, S, d_model)`\n\n**Constraints:**\n- Pre-norm residuals: `x = x + self_attn(norm1(x))`, then `x = x + ffn(norm2(x))`\n- Self-attention is bidirectional: every position may attend to every other position\n- Use explicit Q/K/V/O linear projections and an FFN with `d_ff or 4 * d_model` hidden size",
+      "descriptionZh": "实现 BERT 风格的 pre-norm Transformer 编码器层。\n\n编码器层由双向自注意力和逐位置前馈网络组成，两者都包在残差连接里。不同于 GPT 解码，它不能使用因果遮蔽。\n\n**签名:** `TransformerEncoderLayer(d_model, num_heads, d_ff=None, dropout=0.0)`（nn.Module）\n\n**前向传播:** `forward(x) -> Tensor`\n- `x` — 输入张量 `(B, S, d_model)`\n\n**返回:** 编码后张量 `(B, S, d_model)`\n\n**约束:**\n- Pre-norm 残差：`x = x + self_attn(norm1(x))`，再 `x = x + ffn(norm2(x))`\n- 自注意力是双向的：每个位置都可以看见其他位置\n- 使用显式 Q/K/V/O 线性投影，FFN 隐藏维为 `d_ff or 4 * d_model`",
+      "tests": [
+        {
+          "name": "Module, output shape, and core attributes",
+          "code": "\nimport torch\nimport torch.nn as nn\nblock = {fn}(d_model=32, num_heads=4)\nassert isinstance(block, nn.Module)\nout = block(torch.randn(2, 5, 32))\nassert out.shape == (2, 5, 32), f'Output shape: {out.shape}'\nfor name in ['ln1', 'ln2', 'W_q', 'W_k', 'W_v', 'W_o', 'fc1', 'fc2']:\n    assert hasattr(block, name), f'Missing {name}'\n"
+        },
+        {
+          "name": "FFN uses requested hidden size",
+          "code": "\nimport torch\nblock = {fn}(d_model=16, num_heads=4, d_ff=40)\nassert block.fc1.weight.shape == (40, 16), f'fc1 shape: {block.fc1.weight.shape}'\nassert block.fc2.weight.shape == (16, 40), f'fc2 shape: {block.fc2.weight.shape}'\n"
+        },
+        {
+          "name": "Bidirectional attention lets future tokens affect past",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nblock = {fn}(d_model=32, num_heads=4, dropout=0.0)\nblock.eval()\nx = torch.randn(1, 6, 32)\nout1 = block(x)\nx2 = x.clone()\nx2[:, 4:] = torch.randn(1, 2, 32)\nout2 = block(x2)\nassert not torch.allclose(out1[:, :2], out2[:, :2], atol=1e-5), 'Encoder self-attention should be bidirectional, not causal'\n"
+        },
+        {
+          "name": "Numerical composition matches reference",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(1)\nB, S, D, H = 2, 4, 16, 4\nblock = {fn}(d_model=D, num_heads=H, d_ff=32, dropout=0.0)\nblock.eval()\nx = torch.randn(B, S, D)\nout = block(x)\nwith torch.no_grad():\n    d_k = D // H\n    y = block.ln1(x)\n    q = block.W_q(y).view(B, S, H, d_k).transpose(1, 2)\n    k = block.W_k(y).view(B, S, H, d_k).transpose(1, 2)\n    v = block.W_v(y).view(B, S, H, d_k).transpose(1, 2)\n    weights = torch.softmax((q @ k.transpose(-2, -1)) / (d_k ** 0.5), dim=-1)\n    attn = (weights @ v).transpose(1, 2).contiguous().view(B, S, D)\n    x1 = x + block.W_o(attn)\n    expected = x1 + block.fc2(block.dropout(F.gelu(block.fc1(block.ln2(x1)))))\nassert torch.allclose(out, expected, atol=1e-5), f'Max diff {(out - expected).abs().max()}'\n"
+        },
+        {
+          "name": "Gradient flow",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nblock = {fn}(d_model=16, num_heads=4)\nx = torch.randn(2, 3, 16, requires_grad=True)\nblock(x).sum().backward()\nassert x.grad is not None, 'Missing input gradient'\nassert all(p.grad is not None for p in block.parameters()), 'All parameters should receive gradients'\n"
+        }
+      ]
     }
   ]
 }

@@ -423,6 +423,20 @@
       }
     ]
   },
+  "causal_lm_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def causal_lm_loss(logits, labels, ignore_index=-100):\n    vocab_size = logits.shape[-1]\n    shift_logits = logits[:, :-1, :].contiguous()\n    shift_labels = labels[:, 1:].contiguous()\n    return F.cross_entropy(\n        shift_logits.view(-1, vocab_size),\n        shift_labels.view(-1),\n        ignore_index=ignore_index,\n    )",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "torch.manual_seed(0)\nlogits = torch.randn(2, 5, 10)\nlabels = torch.randint(0, 10, (2, 5))\nprint('LM loss:', causal_lm_loss(logits, labels).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "continuous_batching": {
     "cells": [
       {
@@ -675,6 +689,20 @@
       {
         "type": "code",
         "source": "layer = LoRALinear(16, 8, rank=4)\nx = torch.randn(2, 16)\nprint('Output:', layer(x).shape)\ntrainable = sum(p.numel() for p in layer.parameters() if p.requires_grad)\ntotal = sum(p.numel() for p in layer.parameters())\nprint(f'Trainable: {trainable}/{total} ({100*trainable/total:.1f}%)')",
+        "role": "demo"
+      }
+    ]
+  },
+  "manual_backprop": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def tiny_mlp_backward(x, w1, b1, w2, b2, target):\n    h_pre = x @ w1 + b1\n    h = torch.relu(h_pre)\n    pred = h @ w2 + b2\n    diff = pred - target\n    loss = (diff ** 2).mean()\n\n    d_pred = 2.0 * diff / diff.numel()\n    grad_w2 = h.T @ d_pred\n    grad_b2 = d_pred.sum(dim=0)\n\n    d_h = d_pred @ w2.T\n    d_h_pre = d_h * (h_pre > 0).to(h_pre.dtype)\n    grad_w1 = x.T @ d_h_pre\n    grad_b1 = d_h_pre.sum(dim=0)\n\n    return loss, (grad_w1, grad_b1, grad_w2, grad_b2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "torch.manual_seed(0)\nx = torch.randn(4, 3)\nw1, b1 = torch.randn(3, 5), torch.randn(5)\nw2, b2 = torch.randn(5, 2), torch.randn(2)\ntarget = torch.randn(4, 2)\nloss, grads = tiny_mlp_backward(x, w1, b1, w2, b2, target)\nprint('loss:', loss.item())\nprint('grad shapes:', [g.shape for g in grads])",
         "role": "demo"
       }
     ]
@@ -1285,6 +1313,34 @@
       {
         "type": "code",
         "source": "torch.manual_seed(42)\nd_model, d_ff, world_size = 64, 256, 4\nx = torch.randn(2, d_model)\n\ntp_mlp = TensorParallelMLP(d_model, d_ff, world_size)\nout = tp_mlp(x)\nprint(\"Output shape:\", out.shape)  # expect (2, 64)\n\nw1_full = torch.cat([p.data for p in tp_mlp.w1_shards], dim=1)  # (d_model, d_ff)\nw2_full = torch.cat([p.data for p in tp_mlp.w2_shards], dim=0)  # (d_ff, d_model)\nref = torch.nn.functional.gelu(x @ w1_full) @ w2_full\n\nprint(\"Max diff vs reference:\", (out - ref).abs().max().item())  # expect ~0",
+        "role": "demo"
+      }
+    ]
+  },
+  "transformer_decoder_layer": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class TransformerDecoderLayer(nn.Module):\n    def __init__(self, d_model, num_heads, d_ff=None, dropout=0.0):\n        super().__init__()\n        d_ff = d_ff or 4 * d_model\n        self.num_heads = num_heads\n        self.d_k = d_model // num_heads\n\n        self.ln1 = nn.LayerNorm(d_model)\n        self.ln2 = nn.LayerNorm(d_model)\n        self.ln3 = nn.LayerNorm(d_model)\n\n        self.self_q = nn.Linear(d_model, d_model)\n        self.self_k = nn.Linear(d_model, d_model)\n        self.self_v = nn.Linear(d_model, d_model)\n        self.self_o = nn.Linear(d_model, d_model)\n\n        self.cross_q = nn.Linear(d_model, d_model)\n        self.cross_k = nn.Linear(d_model, d_model)\n        self.cross_v = nn.Linear(d_model, d_model)\n        self.cross_o = nn.Linear(d_model, d_model)\n\n        self.fc1 = nn.Linear(d_model, d_ff)\n        self.dropout = nn.Dropout(dropout)\n        self.fc2 = nn.Linear(d_ff, d_model)\n\n    def split_heads(self, x):\n        B, S, _ = x.shape\n        return x.view(B, S, self.num_heads, self.d_k).transpose(1, 2)\n\n    def merge_heads(self, x):\n        B, _, S, _ = x.shape\n        return x.transpose(1, 2).contiguous().view(B, S, -1)\n\n    def causal_self_attn(self, x):\n        B, T, _ = x.shape\n        q = self.split_heads(self.self_q(x))\n        k = self.split_heads(self.self_k(x))\n        v = self.split_heads(self.self_v(x))\n        scores = torch.matmul(q, k.transpose(-2, -1)) / (self.d_k ** 0.5)\n        mask = torch.triu(torch.ones(T, T, device=x.device, dtype=torch.bool), diagonal=1)\n        scores = scores.masked_fill(mask, float('-inf'))\n        weights = torch.softmax(scores, dim=-1)\n        return self.self_o(self.merge_heads(torch.matmul(weights, v)))\n\n    def cross_attn(self, x, encoder_output):\n        q = self.split_heads(self.cross_q(x))\n        k = self.split_heads(self.cross_k(encoder_output))\n        v = self.split_heads(self.cross_v(encoder_output))\n        scores = torch.matmul(q, k.transpose(-2, -1)) / (self.d_k ** 0.5)\n        weights = torch.softmax(scores, dim=-1)\n        return self.cross_o(self.merge_heads(torch.matmul(weights, v)))\n\n    def forward(self, x, encoder_output):\n        x = x + self.causal_self_attn(self.ln1(x))\n        x = x + self.cross_attn(self.ln2(x), encoder_output)\n        x = x + self.fc2(self.dropout(F.gelu(self.fc1(self.ln3(x)))))\n        return x",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "block = TransformerDecoderLayer(d_model=64, num_heads=4)\nx = torch.randn(2, 6, 64)\nencoder_output = torch.randn(2, 9, 64)\nprint(block(x, encoder_output).shape)",
+        "role": "demo"
+      }
+    ]
+  },
+  "transformer_encoder_layer": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "class TransformerEncoderLayer(nn.Module):\n    def __init__(self, d_model, num_heads, d_ff=None, dropout=0.0):\n        super().__init__()\n        d_ff = d_ff or 4 * d_model\n        self.num_heads = num_heads\n        self.d_k = d_model // num_heads\n\n        self.ln1 = nn.LayerNorm(d_model)\n        self.ln2 = nn.LayerNorm(d_model)\n        self.W_q = nn.Linear(d_model, d_model)\n        self.W_k = nn.Linear(d_model, d_model)\n        self.W_v = nn.Linear(d_model, d_model)\n        self.W_o = nn.Linear(d_model, d_model)\n        self.fc1 = nn.Linear(d_model, d_ff)\n        self.dropout = nn.Dropout(dropout)\n        self.fc2 = nn.Linear(d_ff, d_model)\n\n    def self_attn(self, x):\n        B, S, _ = x.shape\n        q = self.W_q(x).view(B, S, self.num_heads, self.d_k).transpose(1, 2)\n        k = self.W_k(x).view(B, S, self.num_heads, self.d_k).transpose(1, 2)\n        v = self.W_v(x).view(B, S, self.num_heads, self.d_k).transpose(1, 2)\n        scores = torch.matmul(q, k.transpose(-2, -1)) / (self.d_k ** 0.5)\n        weights = torch.softmax(scores, dim=-1)\n        attn = torch.matmul(weights, v)\n        attn = attn.transpose(1, 2).contiguous().view(B, S, -1)\n        return self.W_o(attn)\n\n    def forward(self, x):\n        x = x + self.self_attn(self.ln1(x))\n        x = x + self.fc2(self.dropout(F.gelu(self.fc1(self.ln2(x)))))\n        return x",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "block = TransformerEncoderLayer(d_model=64, num_heads=4)\nx = torch.randn(2, 8, 64)\nprint(block(x).shape)",
         "role": "demo"
       }
     ]

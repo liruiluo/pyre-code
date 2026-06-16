@@ -19,7 +19,7 @@
 
 ## 🧠 What is Pyre Code?
 
-76 problems. You write the implementation, a local grading service runs the tests, you see what broke. That's it.
+100 problems. You write the implementation, a local grading service runs the tests, you see what broke. That's it.
 
 The problems cover what's actually inside Transformers, vLLM, TRL, diffusion models, and GNNs — attention variants, training tricks, inference kernels, alignment algorithms, graph neural networks. No GPU needed.
 
@@ -51,6 +51,7 @@ The problems cover what's actually inside Transformers, vLLM, TRL, diffusion mod
 
 ## 📢 News
 
+- **[2026/06/16]** Hot100 gap pass — 100 problems including causal LM loss, manual backprop, Transformer encoder, and encoder-decoder decoder layers. 🔥
 - **[2026/04/20]** New GNN learning path — 8 problems covering GCN, GAT, GIN, MPNN, GraphSAGE, link prediction, and graph autoencoders. 🔥
 - **[2026/04/20]** New UI redesign with OKLch color system, dark mode, and Geist typography — classic design still available via toggle. 🔥
 - **[2026/04/13]** Submission history — review all your past attempts per problem.
@@ -160,19 +161,19 @@ Any OpenAI-compatible endpoint works (OpenAI, Anthropic via proxy, Ollama, etc.)
 
 ## 📋 Problem Set
 
-76 problems organized by category:
+100 problems organized by category:
 
 | Category | Problems |
 |---|---|
-| **Fundamentals** | ReLU, Softmax, GELU, SwiGLU, Dropout, Embedding, Linear, Kaiming Init, Linear Regression |
-| **Normalization** | LayerNorm, BatchNorm, RMSNorm |
-| **Attention** | Scaled Dot-Product, Multi-Head, Causal, Cross, GQA, Sliding Window, Linear, Flash, Differential, MLA |
-| **Position Encoding** | Sinusoidal PE, RoPE, ALiBi, NTK-aware RoPE |
-| **Architecture** | SwiGLU MLP, GPT-2 Block, ViT Patch, ViT Block, Conv2D, Max Pool, Depthwise Conv, MoE, MoE Load Balance |
-| **Training** | Adam, Cosine LR, Gradient Clipping, Gradient Accumulation, Mixed Precision, Activation Checkpointing |
+| **Fundamentals** | ReLU, Softmax, GELU, SwiGLU, Dropout, Embedding, Linear, Kaiming Init, Linear/Logistic/Softmax Regression, MSE, Manual Backprop |
+| **Normalization** | LayerNorm, BatchNorm, RMSNorm, Pre-Norm vs Post-Norm |
+| **Attention** | Scaled Dot-Product, Multi-Head, Causal, Cross, GQA, MQA, Sliding Window, Linear, Flash, Ring, Differential, MLA |
+| **Position Encoding** | Sinusoidal PE, Learnable PE, RoPE, ALiBi, NTK-aware RoPE |
+| **Architecture** | Transformer FFN, GPT-2 Block, Transformer Encoder/Decoder Layers, SwiGLU MLP, ViT Patch, ViT Block, Conv2D, Max Pool, Depthwise Conv, MoE, MoE Load Balance |
+| **Training** | SGD, SGD + Momentum, Adam, AdamW, Cosine LR, Gradient Clipping, Gradient Accumulation, Mixed Precision, Activation Checkpointing |
 | **Distributed** | Tensor Parallel, FSDP, Ring Attention |
-| **Inference** | KV Cache, Top-k Sampling, Beam Search, Speculative Decoding, BPE, INT8 Quantization, Paged Attention |
-| **Loss & Alignment** | Cross Entropy, Label Smoothing, Focal Loss, Contrastive Loss, DPO, GRPO, PPO, Reward Model |
+| **Inference** | KV Cache, Temperature/Greedy/Top-k/Top-p Sampling, Beam Search, Speculative Decoding, Continuous Batching, BPE, INT8 Quantization, Paged Attention |
+| **Loss & Alignment** | Cross Entropy, Causal LM Loss, SFT, KL Divergence/Penalty, Label Smoothing, Focal Loss, Contrastive Loss, DPO, GRPO, PPO, REINFORCE, Reward Model |
 | **Diffusion & DiT** | Noise Schedule, DDIM Step, Flow Matching, adaLN-Zero |
 | **Adaptation** | LoRA, QLoRA |
 | **Reasoning** | MCTS, Multi-Token Prediction |
@@ -185,14 +186,14 @@ Pick one based on what you're working toward:
 
 | Path | Problems | Description |
 |---|---|---|
-| **Transformer Internals** | 12 | Activations → Normalization → Attention → GPT-2 Block |
-| **Attention & Position Encoding** | 13 | Every attention variant + RoPE, ALiBi, NTK-RoPE |
-| **Train a GPT from Scratch** | 15 | Embeddings → architecture → loss → optimizer → training tricks |
-| **Inference & Distributed Training** | 9 | KV cache, quantization, sampling, tensor parallel, FSDP |
-| **Alignment & Agent Reasoning** | 6 | Reward model → DPO → GRPO → PPO → MCTS |
+| **Transformer Internals** | 20 | Activations → Normalization → Attention → GPT-2 / Encoder / Decoder Layers |
+| **Attention & Position Encoding** | 15 | Every attention variant + RoPE, ALiBi, NTK-RoPE |
+| **Train a GPT from Scratch** | 21 | Embeddings → architecture → LM loss → optimizer → training tricks |
+| **Inference & Distributed Training** | 12 | KV cache, quantization, sampling, continuous batching, tensor parallel, FSDP |
+| **Alignment & Agent Reasoning** | 13 | SFT → reward model → DPO → GRPO → PPO with GAE → MCTS |
 | **Vision Transformer Pipeline** | 7 | Conv → patch embedding → ViT block |
 | **Diffusion Models & DiT** | 5 | Noise schedule → DDIM → flow matching → adaLN-Zero |
-| **LLM Frontier Architectures** | 7 | GQA, Differential Attention, MLA, MoE, Multi-Token Prediction |
+| **LLM Frontier Architectures** | 8 | MQA/GQA, Differential Attention, MLA, MoE, Multi-Token Prediction |
 | **Graph Neural Networks** | 8 | GCN → GAT → GIN → MPNN → GraphSAGE → Link Prediction → GAE |
 
 ```
