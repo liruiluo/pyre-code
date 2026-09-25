@@ -20,10 +20,10 @@ export default function ProblemsPage() {
   const [category, setCategory] = useState('');
 
   useEffect(() => {
-    fetch('/api/problems')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/problems`)
       .then((r) => r.json())
       .then((d) => setProblems(d.problems));
-    fetch('/api/progress')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/progress`)
       .then((r) => r.json())
       .then((d) => setProgress(d.progress || {}));
   }, []);
@@ -190,7 +190,7 @@ export default function ProblemsPage() {
                         key={p.id}
                         className="cursor-pointer transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--accent)_3%,var(--bg-elev))]"
                         style={{ borderTop: '1px solid var(--line)', background: 'var(--bg-elev)' }}
-                        onClick={() => window.location.href = `/problems/${p.id}`}
+                        onClick={() => window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/problems/${p.id}`}
                       >
                         <td className="px-4 py-3 mono text-[12px] text-text-3 tabular-nums">{String(i + 1).padStart(3, '0')}</td>
                         <td className="px-1 py-3"><StatusIcon status={status} /></td>

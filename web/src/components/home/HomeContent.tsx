@@ -120,7 +120,7 @@ export function HomeContent({ stats }: HomeContentProps) {
   }, [router]);
 
   useEffect(() => {
-    fetch('/api/paths')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/paths`)
       .then((r) => r.json())
       .then((d) => {
         const pathsList = d.paths ?? [];

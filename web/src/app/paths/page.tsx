@@ -15,7 +15,7 @@ export default function PathsPage() {
   const [paths, setPaths] = useState<PathWithProgress[]>([]);
 
   useEffect(() => {
-    fetch('/api/paths')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/paths`)
       .then((r) => r.json())
       .then((d) => setPaths(d.paths ?? []));
   }, []);

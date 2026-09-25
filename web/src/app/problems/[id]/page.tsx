@@ -80,10 +80,10 @@ function WorkspacePageNew() {
         resetTestPanel();
         resetAiHelp();
       });
-    fetch('/api/problems')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/problems`)
       .then((r) => r.json())
       .then((d) => setAllProblems(d.problems));
-    fetch('/api/progress')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/progress`)
       .then((r) => r.json())
       .then((d) => setProgress(d.progress || {}));
     fetch(`/api/submissions/${id}`)
@@ -149,7 +149,7 @@ function WorkspacePageNew() {
     setRunResult(null);
     try {
       const testIndices = problem.tests.slice(0, 2).map((_, i) => i);
-      const res = await fetch('/api/run', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId: id, code: currentCode, testIndices }),
@@ -169,7 +169,7 @@ function WorkspacePageNew() {
     setIsSubmitting(true);
     setSubmissionResult(null);
     try {
-      const res = await fetch('/api/submit', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId: id, code: currentCode }),
@@ -179,7 +179,7 @@ function WorkspacePageNew() {
       setRunResult(data);
       setBottomTab('testresults');
       setFeedbackResult(data);
-      fetch('/api/progress').then((r) => r.json()).then((d) => setProgress(d.progress || {}));
+      fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/progress`).then((r) => r.json()).then((d) => setProgress(d.progress || {}));
       fetch(`/api/submissions/${id}`).then((r) => r.json()).then((d: SubmissionHistory[]) => setSubmissionHistory(d)).catch(() => {});
     } catch {
       const err = { passed: 0, total: 0, allPassed: false, results: [], totalTimeMs: 0, error: t('networkError') };

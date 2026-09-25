@@ -1,0 +1,81 @@
+# Public deployment for the Aliyun host (60.205.221.234).
+#
+# Topology (mirrors the original leadtek deploy):
+#   grading    — internal-only network (user-submitted code has no outbound access)
+#   web        — Next.js, reached only through auth-proxy
+#   auth-proxy — nginx Basic Auth, published on host loopback 127.0.0.1:3036
+#
+# The host Caddy (sub2api-public-caddy, host network) proxies
+# https://60.205.221.234/pyre* -> 127.0.0.1:3036.
+#
+# Memory limits are tuned for a 2 vCPU / 1.8 GiB host that also runs the
+# sub2api stack; the upstream docker-compose.yml assumes a much larger box.
+#
+# Secrets (auth/htpasswd, auth/password.txt) are gitignored and must exist
+# before `./start.sh`. See start.sh for regeneration instructions.
+
+services:
+  grading:
+    build:
+      context: .
+      dockerfile: grading.Dockerfile
+    container_name: pyre-code-public-grading
+    command: ["uvicorn", "grading_service.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    volumes:
+      - pyre-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.2"
+          memory: 900M
+    networks:
+      - internal
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web.Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_PATH: /pyre
+    container_name: pyre-code-public-web
+    environment:
+      - GRADING_SERVICE_URL=http://grading:8000
+      - AI_HELP_BASE_URL=${AI_HELP_BASE_URL:-}
+      - AI_HELP_API_KEY=${AI_HELP_API_KEY:-}
+      - AI_HELP_MODEL=${AI_HELP_MODEL:-}
+    depends_on:
+      grading:
+        condition: service_healthy
+    networks:
+      - internal
+      - default
+    restart: unless-stopped
+
+  auth-proxy:
+    image: nginx:alpine
+    container_name: pyre-code-public-auth-proxy
+    volumes:
+      - ./auth/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./auth/htpasswd:/etc/nginx/.htpasswd:ro
+    ports:
+      - "127.0.0.1:3036:80"
+    depends_on:
+      - web
+    networks:
+      - internal
+      - default
+    restart: unless-stopped
+
+volumes:
+  pyre-data:
+
+networks:
+  internal:
+    internal: true

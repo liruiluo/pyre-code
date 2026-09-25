@@ -55,7 +55,7 @@ export function AIHelpTab({ problem }: AIHelpTabProps) {
   }, [aiHelpCustomPrompt]);
 
   useEffect(() => {
-    fetch('/api/ai-help/status')
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/ai-help/status`)
       .then((r) => r.json())
       .then((d: { configured: boolean }) => setServerConfigured(d.configured))
       .catch(() => setServerConfigured(false));
@@ -85,7 +85,7 @@ export function AIHelpTab({ problem }: AIHelpTabProps) {
         locale,
         config: { baseUrl: aiHelpConfig.baseUrl, apiKey: aiHelpConfig.apiKey, model: aiHelpConfig.model },
       };
-      const res = await fetch('/api/ai-help', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/ai-help`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(`${res.status}`);
       const data: AiHelpResponse = await res.json();
       setAiHelpResponse(data.guidance);
