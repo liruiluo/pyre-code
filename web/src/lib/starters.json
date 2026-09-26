@@ -119,5 +119,9 @@
   "tied_lm_logits": "def tied_lm_logits(hidden, embedding_weight, scale=1.0):\n    pass",
   "sigmoid_moe_routing": "def sigmoid_moe_routing(hidden_states, router_weight, top_k):\n    pass",
   "shared_expert_moe": "def shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k):\n    pass",
-  "hybrid_attention_mask": "def hybrid_attention_mask(seq_len, layer_types, window_size):\n    pass"
+  "hybrid_attention_mask": "def hybrid_attention_mask(seq_len, layer_types, window_size):\n    pass",
+  "partial_rope": "def partial_rope(x, cos, sin):\n    pass",
+  "delta_rule_scan": "def delta_rule_scan(k, v, beta, S0):\n    pass",
+  "bias_load_balancing": "def bias_adjusted_routing(hidden_states, router_weight, expert_biases, top_k):\n    pass",
+  "newton_schulz": "def newton_schulz(G, steps=5):\n    pass"
 }

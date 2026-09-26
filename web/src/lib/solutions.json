@@ -493,6 +493,20 @@
       }
     ]
   },
+  "bias_load_balancing": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef bias_adjusted_routing(hidden_states, router_weight, expert_biases, top_k):\n    scores = torch.sigmoid(hidden_states @ router_weight.T)\n    combined = scores + expert_biases\n    _, idx = combined.topk(top_k, dim=-1)\n    sel = scores.gather(1, idx)\n    weights = sel / sel.sum(dim=-1, keepdim=True)\n    return weights, idx",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nx = torch.randn(4, 8)\nW = torch.randn(6, 8)\nb = torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0, 2.0])  # expert 5 needs traffic\nweights, indices = bias_adjusted_routing(x, W, b, 2)\nprint('selected experts:\\n', indices)\nprint('bias-free gate weights:\\n', weights)",
+        "role": "demo"
+      }
+    ]
+  },
   "causal_attention": {
     "cells": [
       {
@@ -898,6 +912,20 @@
       }
     ]
   },
+  "partial_rope": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef partial_rope(x, cos, sin):\n    B, H, T, D = x.shape\n    R = cos.shape[-1]\n    half = R // 2\n    x_rot = x[..., :R]\n    x_pass = x[..., R:]\n    x1 = x_rot[..., :half]\n    x2 = x_rot[..., half:]\n    # the (T, R) tables are in doubled form [f, f]; the first half carries f\n    c = cos[..., :half].unsqueeze(0).unsqueeze(0)  # (1, 1, T, half)\n    s = sin[..., :half].unsqueeze(0).unsqueeze(0)\n    rot = torch.cat((x1 * c - x2 * s, x1 * s + x2 * c), dim=-1)\n    return torch.cat((rot, x_pass), dim=-1)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nx = torch.randn(1, 2, 4, 8)            # head dim 8\nhalf = torch.randn(4, 3)               # rotate 6 of 8 channels (GLM-4.5 style 75%)\ncos = torch.cat((half, half), dim=-1)\nsin = torch.cat((half, half), dim=-1)\nout = partial_rope(x, cos, sin)\nprint('rotated channels changed :', not torch.allclose(out[..., :6], x[..., :6]))\nprint('register channels intact :', torch.equal(out[..., 6:], x[..., 6:]))",
+        "role": "demo"
+      }
+    ]
+  },
   "ppo_loss": {
     "cells": [
       {
@@ -1206,6 +1234,20 @@
       }
     ]
   },
+  "delta_rule_scan": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef delta_rule_scan(k, v, beta, S0):\n    T, dk = k.shape\n    dv = v.shape[-1]\n    states = []\n    S = S0\n    for t in range(T):\n        kt = k[t]\n        vt = v[t]\n        # remove the current prediction along k, write the residual\n        S = S - beta[t] * torch.outer(kt, kt @ S - vt)\n        states.append(S)\n    return torch.stack(states)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\ndk, dv = 8, 6\nk = torch.nn.functional.normalize(torch.randn(5, dk), dim=-1)\nv = torch.randn(5, dv)\nbeta = torch.ones(5)\nstates = delta_rule_scan(k, v, beta, torch.zeros(dk, dv))\nprint('state sequence:', tuple(states.shape))\nprint('first association recalled:', torch.allclose(k[0] @ states[0], v[0], atol=1e-5))",
+        "role": "demo"
+      }
+    ]
+  },
   "diff_attention": {
     "cells": [
       {
@@ -1467,6 +1509,20 @@
       {
         "type": "code",
         "source": "mqa = MultiQueryAttention(32, 8)\nx = torch.randn(2, 5, 32)\nprint(mqa.forward(x).shape)",
+        "role": "demo"
+      }
+    ]
+  },
+  "newton_schulz": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef newton_schulz(G, steps=5):\n    a, b, c = 3.4445, -4.7750, 2.0315\n    X = G / (G.norm() + 1e-7)\n    for _ in range(steps):\n        A = X @ X.T\n        B = b * A + c * (A @ A)\n        X = a * X + B @ X\n    return X",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nG = torch.randn(8, 16) * 10.0\nbefore = torch.linalg.svdvals(G / G.norm())\nafter = torch.linalg.svdvals(newton_schulz(G, steps=5))\nprint(f'spread before: {before.max() / before.min():.1f}')\nprint(f'spread after : {after.max() / after.min():.2f}  (band [{after.min():.3f}, {after.max():.3f}])')",
         "role": "demo"
       }
     ]

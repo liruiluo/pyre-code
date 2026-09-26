@@ -1835,7 +1835,7 @@
       "functionName": "mla_attention",
       "hint": "1. `c_kv = X @ W_dkv`  → `(B,S,kv_rank)`\n2. `K = c_kv @ W_uk`, `V = c_kv @ W_uv`, `Q = X @ W_q`\n3. `.view(B,S,num_heads,D_h).transpose(1,2)` for each\n4. Scaled dot-product attn → `.transpose(1,2).reshape(B,S,-1)`",
       "hintZh": "1. `c_kv = X @ W_dkv`  → `(B,S,kv_rank)`\n2. `K = c_kv @ W_uk`，`V = c_kv @ W_uv`，`Q = X @ W_q`\n3. 各自 `.view(B,S,num_heads,D_h).transpose(1,2)`\n4. 缩放点积注意力 → `.transpose(1,2).reshape(B,S,-1)`",
-      "descriptionEn": "Implement Multi-Head Latent Attention (MLA) from DeepSeek V2/V3.\n\nMLA's key innovation: instead of caching full K and V tensors, compress them into a low-rank latent vector `c_kv`, then decompress on the fly. This dramatically reduces KV cache memory during inference.\n\n**Signature:** `mla_attention(X, W_dkv, W_uk, W_uv, W_q, num_heads) -> Tensor`\n\n**Parameters:**\n- `X` — input tensor (B, S, D)\n- `W_dkv` — KV compression matrix (D, kv_rank)\n- `W_uk` — K decompression matrix (kv_rank, num_heads * D_h)\n- `W_uv` — V decompression matrix (kv_rank, num_heads * D_h)\n- `W_q` — Q projection matrix (D, num_heads * D_h)\n- `num_heads` — number of attention heads\n\n**Returns:** output tensor (B, S, num_heads * D_h)\n\n**Steps:**\n1. Compress: `c_kv = X @ W_dkv` → (B, S, kv_rank)\n2. Decompress: `K = c_kv @ W_uk`, `V = c_kv @ W_uv`\n3. Project queries: `Q = X @ W_q`\n4. Reshape all to (B, num_heads, S, D_h)\n5. Scaled dot-product attention\n6. Reshape output to (B, S, num_heads * D_h)",
+      "descriptionEn": "Implement Multi-Head Latent Attention (MLA) from DeepSeek V2/V3 — also the full-attention layers of Kimi K2 and the gated-MLA layers in Kimi K3.\n\nMLA's key innovation: instead of caching full K and V tensors, compress them into a low-rank latent vector `c_kv`, then decompress on the fly. This dramatically reduces KV cache memory during inference.\n\n**Signature:** `mla_attention(X, W_dkv, W_uk, W_uv, W_q, num_heads) -> Tensor`\n\n**Parameters:**\n- `X` — input tensor (B, S, D)\n- `W_dkv` — KV compression matrix (D, kv_rank)\n- `W_uk` — K decompression matrix (kv_rank, num_heads * D_h)\n- `W_uv` — V decompression matrix (kv_rank, num_heads * D_h)\n- `W_q` — Q projection matrix (D, num_heads * D_h)\n- `num_heads` — number of attention heads\n\n**Returns:** output tensor (B, S, num_heads * D_h)\n\n**Steps:**\n1. Compress: `c_kv = X @ W_dkv` → (B, S, kv_rank)\n2. Decompress: `K = c_kv @ W_uk`, `V = c_kv @ W_uv`\n3. Project queries: `Q = X @ W_q`\n4. Reshape all to (B, num_heads, S, D_h)\n5. Scaled dot-product attention\n6. Reshape output to (B, S, num_heads * D_h)",
       "descriptionZh": "实现 DeepSeek V2/V3 中的多头潜在注意力（MLA）。\n\nMLA 的核心创新：不缓存完整的 K 和 V 张量，而是将其压缩为低秩潜在向量 `c_kv`，推理时再即时解压。这大幅降低了推理时的 KV 缓存内存占用。\n\n**签名:** `mla_attention(X, W_dkv, W_uk, W_uv, W_q, num_heads) -> Tensor`\n\n**参数:**\n- `X` — 输入张量 (B, S, D)\n- `W_dkv` — KV 压缩矩阵 (D, kv_rank)\n- `W_uk` — K 解压矩阵 (kv_rank, num_heads * D_h)\n- `W_uv` — V 解压矩阵 (kv_rank, num_heads * D_h)\n- `W_q` — Q 投影矩阵 (D, num_heads * D_h)\n- `num_heads` — 注意力头数\n\n**返回:** 输出张量 (B, S, num_heads * D_h)\n\n**步骤:**\n1. 压缩：`c_kv = X @ W_dkv` → (B, S, kv_rank)\n2. 解压：`K = c_kv @ W_uk`，`V = c_kv @ W_uv`\n3. 投影查询：`Q = X @ W_q`\n4. 重塑为 (B, num_heads, S, D_h)\n5. 缩放点积注意力\n6. 重塑输出为 (B, S, num_heads * D_h)",
       "tests": [
         {
@@ -3616,7 +3616,7 @@
       "functionName": "sigmoid_moe_routing",
       "hint": "`scores = torch.sigmoid(x @ W.T)`; `vals, idx = scores.topk(k, dim=-1)`; `weights = vals / vals.sum(-1, keepdim=True)`.",
       "hintZh": "`scores = torch.sigmoid(x @ W.T)`；`vals, idx = scores.topk(k, dim=-1)`；`weights = vals / vals.sum(-1, keepdim=True)`。",
-      "descriptionEn": "Route tokens through a sparse MoE layer with sigmoid gating — the DeepSeek-V3 detail.\n\nClassic MoE (Mixtral, Qwen2-MoE) scores experts with a softmax over all experts, which couples every score to every other. DeepSeek-V3 replaces it with element-wise sigmoid scores: each expert is scored independently in `(0, 1)`. The top-k experts are selected per token, and the selected scores are renormalized to sum to one — selection is decoupled from normalization.\n\n**Signature:** `sigmoid_moe_routing(hidden_states, router_weight, top_k) -> (weights, indices)`\n\n**Parameters:**\n- `hidden_states` — shape `(T, d)`\n- `router_weight` — shape `(E, d)`, one router vector per expert\n- `top_k` — number of experts to activate per token, `1 <= k <= E`\n\n**Returns:**\n- `weights` — `(T, k)`, the renormalized selected scores, each row summing to 1\n- `indices` — `(T, k)`, the selected expert ids, sorted by score descending\n\n**Constraints:**\n- Scores are `sigmoid(hidden @ router_weight.T)`, never a softmax\n- Renormalization divides each selected score by the sum of the selected scores",
+      "descriptionEn": "Route tokens through a sparse MoE layer with sigmoid gating — the DeepSeek-V3 detail, adopted by Kimi K2/K3 with fine-grained experts.\n\nClassic MoE (Mixtral, Qwen2-MoE) scores experts with a softmax over all experts, which couples every score to every other. DeepSeek-V3 replaces it with element-wise sigmoid scores: each expert is scored independently in `(0, 1)`. The top-k experts are selected per token, and the selected scores are renormalized to sum to one — selection is decoupled from normalization.\n\n**Signature:** `sigmoid_moe_routing(hidden_states, router_weight, top_k) -> (weights, indices)`\n\n**Parameters:**\n- `hidden_states` — shape `(T, d)`\n- `router_weight` — shape `(E, d)`, one router vector per expert\n- `top_k` — number of experts to activate per token, `1 <= k <= E`\n\n**Returns:**\n- `weights` — `(T, k)`, the renormalized selected scores, each row summing to 1\n- `indices` — `(T, k)`, the selected expert ids, sorted by score descending\n\n**Constraints:**\n- Scores are `sigmoid(hidden @ router_weight.T)`, never a softmax\n- Renormalization divides each selected score by the sum of the selected scores",
       "descriptionZh": "用 sigmoid 门控把 token 路由进稀疏 MoE 层——DeepSeek-V3 的细节。\n\n经典 MoE（Mixtral、Qwen2-MoE）对所有专家做 softmax 打分，每个分数与其他所有分数耦合。DeepSeek-V3 换成逐元素 sigmoid 分数：每个专家独立打 `(0, 1)` 区间的分。每个 token 选 top-k 专家，再把选中分数重归一到和为 1——选择与归一化解耦。\n\n**签名:** `sigmoid_moe_routing(hidden_states, router_weight, top_k) -> (weights, indices)`\n\n**参数:**\n- `hidden_states` — 形状 `(T, d)`\n- `router_weight` — 形状 `(E, d)`，每个专家一个路由向量\n- `top_k` — 每个 token 激活的专家数，`1 <= k <= E`\n\n**返回:**\n- `weights` — `(T, k)`，重归一后的选中分数，每行和为 1\n- `indices` — `(T, k)`，选中的专家 id，按分数降序\n\n**约束:**\n- 分数是 `sigmoid(hidden @ router_weight.T)`，绝不用 softmax\n- 重归一化是把每个选中分数除以选中分数之和",
       "tests": [
         {
@@ -3838,7 +3838,7 @@
       "functionName": "shared_expert_moe",
       "hint": "`expert_out = torch.einsum('td,edo->teo', x, expert_weights)` gives every expert output at once; gather the top-k with `idx.unsqueeze(-1).expand(...)`; renormalize like the sigmoid task; add the shared expert last.",
       "hintZh": "`expert_out = torch.einsum('td,edo->teo', x, expert_weights)` 一次算出所有专家输出；用 `idx.unsqueeze(-1).expand(...)` gather 出 top-k；照 sigmoid 题那样重归一化；最后加共享专家。",
-      "descriptionEn": "Combine sparse routed experts with one always-on shared expert — the Qwen3-MoE / DeepSeek-V2 architecture detail.\n\nPure sparse routing lets every token see only `k` of `E` experts, which multiplies parameter count cheaply but fragments knowledge: facts every token needs get smeared across experts. The fix is a shared expert, activated for every token, carrying the common computation; routed experts add specialized knowledge on top.\n\nRouting (Qwen3-MoE convention): softmax over all experts, select top-k, renormalize the selected scores to sum to one. The output is `shared(x) + sum_i w_i * E_i(x)`.\n\n**Signature:** `shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k) -> Tensor`\n\n**Parameters:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`, one router vector per expert\n- `expert_weights` — `(E, d, d_out)`, expert `i` computes `x @ expert_weights[i]` (no bias)\n- `shared_expert_weight` — `(d, d_out)`, the shared expert computes `x @ shared_expert_weight`\n- `top_k` — routed experts activated per token\n\n**Returns:** `(T, d_out)` output tensor\n\n**Constraints:**\n- The shared expert is added exactly once per token, outside the routing\n- Selected routed weights are renormalized over the top-k scores",
+      "descriptionEn": "Combine sparse routed experts with one always-on shared expert — the Qwen3-MoE / DeepSeek-V2 architecture detail; Kimi K3 carries two shared experts on top of 896 routed ones.\n\nPure sparse routing lets every token see only `k` of `E` experts, which multiplies parameter count cheaply but fragments knowledge: facts every token needs get smeared across experts. The fix is a shared expert, activated for every token, carrying the common computation; routed experts add specialized knowledge on top.\n\nRouting (Qwen3-MoE convention): softmax over all experts, select top-k, renormalize the selected scores to sum to one. The output is `shared(x) + sum_i w_i * E_i(x)`.\n\n**Signature:** `shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k) -> Tensor`\n\n**Parameters:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`, one router vector per expert\n- `expert_weights` — `(E, d, d_out)`, expert `i` computes `x @ expert_weights[i]` (no bias)\n- `shared_expert_weight` — `(d, d_out)`, the shared expert computes `x @ shared_expert_weight`\n- `top_k` — routed experts activated per token\n\n**Returns:** `(T, d_out)` output tensor\n\n**Constraints:**\n- The shared expert is added exactly once per token, outside the routing\n- Selected routed weights are renormalized over the top-k scores",
       "descriptionZh": "把稀疏路由专家与一个常开的共享专家组合——Qwen3-MoE / DeepSeek-V2 的架构细节。\n\n纯稀疏路由让每个 token 只见 `E` 个专家中的 `k` 个，参数量便宜地翻倍，但知识碎片化：每个 token 都需要的事实被抹平到各专家。解法是共享专家——每个 token 都激活，承载公共计算；路由专家在其上叠加专门知识。\n\n路由（Qwen3-MoE 约定）：对所有专家 softmax，选 top-k，选中分数重归一到和为 1。输出为 `shared(x) + Σ_i w_i · E_i(x)`。\n\n**签名:** `shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k) -> Tensor`\n\n**参数:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`，每个专家一个路由向量\n- `expert_weights` — `(E, d, d_out)`，专家 `i` 计算 `x @ expert_weights[i]`（无偏置）\n- `shared_expert_weight` — `(d, d_out)`，共享专家计算 `x @ shared_expert_weight`\n- `top_k` — 每个 token 激活的路由专家数\n\n**返回:** `(T, d_out)` 输出张量\n\n**约束:**\n- 共享专家在路由之外，每个 token 恰好加一次\n- 选中的路由权重在 top-k 分数上重归一化",
       "tests": [
         {
@@ -3897,6 +3897,154 @@
         {
           "name": "Attention factor is applied",
           "code": "\nimport math\nimport torch\nhead_dim, base, orig_max, scale = 16, 10000.0, 2048, 16.0\npositions = torch.arange(0, 32)\ncos, sin = {fn}(positions, head_dim, base=base, original_max_position=orig_max, scale_factor=scale)\ncorr = lambda n: head_dim * math.log(orig_max / (n * 2 * math.pi)) / (2 * math.log(base))\nlow = max(math.floor(corr(32.0)), 0)\nattn = 1.0 + 0.1 * math.log(scale)\ninv = base ** (torch.arange(0, head_dim, 2).float() / head_dim)\nplain = torch.outer(positions.float(), inv)\nratio = (cos[:, 0] / plain[:, 0].cos()).median()\nassert torch.allclose(ratio, torch.tensor(attn), atol=1e-3), f'Column 0 carries the attention factor, ratio {ratio}'\n"
+        }
+      ]
+    },
+    {
+      "id": "bias_load_balancing",
+      "title": "Auxiliary-Loss-Free MoE Routing (DeepSeek-V3)",
+      "titleZh": "免辅助损失的 MoE 路由（DeepSeek-V3）",
+      "difficulty": "Medium",
+      "functionName": "bias_adjusted_routing",
+      "hint": "`s = sigmoid(x @ W.T)`; rank by `s + b` with topk; gather the selected `s` values and renormalize those (never the biased scores).",
+      "hintZh": "`s = sigmoid(x @ W.T)`；用 `s + b` topk 排序；gather 出被选的 `s` 值并只对它们重归一（绝不用带偏置的分数）。",
+      "descriptionEn": "Balance a sparse MoE layer with per-expert routing biases instead of an auxiliary loss — the auxiliary-loss-free strategy DeepSeek-V3 introduced and Kimi K2 adopted.\n\nClassic load balancing adds an auxiliary loss that fights the language objective and destabilizes training at scale. DeepSeek-V3's fix: give every expert a bias `b_i` that never enters gradients nor gate weights, and use it ONLY to steer selection. Selection picks the top-k experts by `s_i + b_i`; the gate weight of a selected expert is its raw score `s_i` renormalized over the selection. Outside training, the biases are stepped down for overloaded experts and up for underloaded ones — control by construction, not by gradient.\n\n**Signature:** `bias_adjusted_routing(hidden_states, router_weight, expert_biases, top_k) -> (weights, indices)`\n\n**Parameters:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`\n- `expert_biases` — `(E,)`, the load-balancing biases (not part of the graph)\n- `top_k` — experts selected per token\n\n**Returns:**\n- `weights` — `(T, k)`: the renormalized raw scores of the selected experts, rows summing to 1\n- `indices` — `(T, k)`: experts chosen by highest `s_i + b_i`, sorted by that combined score descending\n\n**Constraints:**\n- Selection ranks by `s + b`; gate weights use `s` only — biases must never leak into the weights\n- Zero biases reduce the function to plain sigmoid routing",
+      "descriptionZh": "用每专家路由偏置而非辅助损失来平衡稀疏 MoE 层——DeepSeek-V3 引入、Kimi K2 沿用的免辅助损失策略。\n\n经典负载均衡加辅助损失，会与语言目标打架、大尺度训练失稳。DeepSeek-V3 的修法：给每个专家一个偏置 `b_i`——永不进梯度、永不进门控权重，只用于引导选择。选择按 `s_i + b_i` 取 top-k；被选专家的门控权重是原始分数 `s_i` 在选集上重归一。训练之外，偏置按负载步进——过载调低、欠载调高——靠构造控制而非梯度。\n\n**签名:** `bias_adjusted_routing(hidden_states, router_weight, expert_biases, top_k) -> (weights, indices)`\n\n**参数:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`\n- `expert_biases` — `(E,)`，负载均衡偏置（不在计算图里）\n- `top_k` — 每个 token 选的专家数\n\n**返回:**\n- `weights` — `(T, k)`：被选专家的原始分数重归一，每行和为 1\n- `indices` — `(T, k)`：按 `s_i + b_i` 最高选出的专家，按组合分数降序\n\n**约束:**\n- 选择按 `s + b` 排序；门控权重只用 `s`——偏置绝不能漏进权重\n- 偏置全零时退化为普通 sigmoid 路由",
+      "tests": [
+        {
+          "name": "Zero biases reduce to plain sigmoid routing",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nx = torch.randn(6, 12)\nW = torch.randn(8, 12)\nw_a, i_a = {fn}(x, W, torch.zeros(8), 3)\ns = torch.sigmoid(x @ W.T)\nvals, idx = s.topk(3, dim=-1)\nw_e = vals / vals.sum(dim=-1, keepdim=True)\nassert torch.equal(i_a, idx) and torch.allclose(w_a, w_e, atol=1e-6), 'No bias: plain sigmoid top-k routing'\n"
+        },
+        {
+          "name": "Biases steer selection",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nx = torch.randn(4, 10)\nW = torch.randn(5, 10)\ns = torch.sigmoid(x @ W.T)\n# push the globally-weakest expert to the top of every token's selection\nweakest = s.mean(dim=0).argmin().item()\nbiases = torch.zeros(5)\nbiases[weakest] = 10.0\n_, idx = {fn}(x, W, biases, 1)\nassert (idx[:, 0] == weakest).all(), 'A large bias must win the selection'\n"
+        },
+        {
+          "name": "Gate weights exclude the bias",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nx = torch.randn(3, 16)\nW = torch.randn(6, 16)\nbiases = torch.tensor([0.0, 2.0, -1.0, 0.5, 0.0, 0.0])\nweights, indices = {fn}(x, W, biases, 3)\ns = torch.sigmoid(x @ W.T)\nsel = s.gather(1, indices)\nexpected = sel / sel.sum(dim=-1, keepdim=True)\nassert torch.allclose(weights, expected, atol=1e-6), 'Weights must be raw-score renormalized, bias-free'\nassert torch.allclose(weights.sum(-1), torch.ones(3), atol=1e-6)\n"
+        },
+        {
+          "name": "Indices are ordered by the biased score",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nx = torch.randn(5, 8)\nW = torch.randn(7, 8)\nbiases = torch.randn(7)\n_, indices = {fn}(x, W, biases, 4)\ncombined = torch.sigmoid(x @ W.T) + biases\nmanual = combined.argsort(dim=-1, descending=True)[:, :4]\nassert torch.equal(indices, manual), 'Selection order follows s + b'\n"
+        },
+        {
+          "name": "Gradients flow through scores but not biases",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nx = torch.randn(3, 6, requires_grad=True)\nW = torch.randn(4, 6, requires_grad=True)\nb = torch.randn(4, requires_grad=True)\nweights, _ = {fn}(x, W, b, 2)\nweights.pow(2).sum().backward()\nassert x.grad is not None and x.grad.abs().sum() > 0, 'Scores must be trainable'\nassert W.grad is not None and W.grad.abs().sum() > 0\nassert b.grad is None, 'Biases must stay outside the computation graph'\n"
+        },
+        {
+          "name": "A biased winner can carry near-zero weight",
+          "code": "\nimport torch\nx = torch.tensor([[1.0, 0.0]])\nW = torch.tensor([[1.0, 0.0], [0.0, 1.0]])  # expert 0 scores high on x\nbiases = torch.tensor([0.0, 8.0])            # expert 1 wins selection via bias only\nweights, indices = {fn}(x, W, biases, 2)\nassert indices[0, 0].item() == 1, 'Bias lifts expert 1 to the top of the selection'\nassert weights[0, 0] < 0.5, 'Expert 1 has the smaller raw score, so the smaller weight'\n"
+        }
+      ]
+    },
+    {
+      "id": "partial_rope",
+      "title": "Partial RoPE (GLM)",
+      "titleZh": "部分旋转位置编码（GLM）",
+      "difficulty": "Medium",
+      "functionName": "partial_rope",
+      "hint": "Split off the pass-through tail first: `x_rot, x_pass = x[..., :R], x[..., R:]`; take `f_c = cos[..., :R//2]`, `f_s = sin[..., :R//2]` (the doubled table repeats it) and rotate the block by pairing `x_rot[..., :R//2]` with `x_rot[..., R//2:]`.",
+      "hintZh": "先切出直通尾部：`x_rot, x_pass = x[..., :R], x[..., R:]`；旋转块内把 `x_rot[..., :R//2]` 与 `x_rot[..., R//2:]` 配对，`(T, R)` 的表广播到 `(B, H, T, R)`。",
+      "descriptionEn": "Rotate only part of each head dimension — the partial RoPE used across the GLM line since ChatGLM2 (25% rotated there, GLM-4.5 rotates 75%).\n\nFull RoPE rotates every dimension of the query/key head. GLM keeps a slice of the head dim rotation-free: those channels stay position-agnostic and act as content registers, which stabilizes long-context behavior. The mechanics: the first `R` dimensions of the head go through the standard rotary pairing, the remaining `D - R` pass through untouched.\n\n**Signature:** `partial_rope(x, cos, sin) -> Tensor`\n\n**Parameters:**\n- `x` — `(B, H, T, D)` query/key tensor\n- `cos`, `sin` — `(T, R)` rotary tables for the rotated channels, in the doubled form `[f, f]` (each half identical, `R` even, `R <= D`)\n\n**Returns:** `(B, H, T, D)`: channels `[0, R)` rotated, channels `[R, D)` passed through\n\n**Constraints:**\n- Rotation pairs dimension `i` with `i + R/2` within the rotated block, exactly like full RoPE\n- With `R == D` the result must equal full RoPE",
+      "descriptionZh": "只旋转头维度的一部分——GLM 系列自 ChatGLM2 起使用的部分旋转 RoPE（ChatGLM2 旋转 25%，GLM-4.5 旋转 75%）。\n\n完整 RoPE 旋转 query/key 头的每一个维度。GLM 保留一段不旋转：这些通道与位置无关，充当内容寄存器，长上下文更稳。机制：头的前 `R` 维走标准旋转配对，其余 `D − R` 维直通。\n\n**签名:** `partial_rope(x, cos, sin) -> Tensor`\n\n**参数:**\n- `x` — `(B, H, T, D)` 的 query/key 张量\n- `cos`、`sin` — `(T, R)` 旋转通道的表，双拼形式 `[f, f]`（两半相同，`R` 偶数，`R <= D`）\n\n**返回:** `(B, H, T, D)`：通道 `[0, R)` 被旋转，通道 `[R, D)` 直通\n\n**约束:**\n- 旋转把旋转块内的维度 `i` 与 `i + R/2` 配对，与完整 RoPE 完全一致\n- `R == D` 时结果必须等于完整 RoPE",
+      "tests": [
+        {
+          "name": "Pass-through channels are untouched",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nB, H, T, D, R = 2, 3, 5, 8, 6\nx = torch.randn(B, H, T, D)\ncos = torch.randn(T, R)\nsin = torch.randn(T, R)\nout = {fn}(x, cos, sin)\nassert out.shape == x.shape\nassert torch.equal(out[..., R:], x[..., R:]), 'Channels [R, D) must pass through unchanged'\n"
+        },
+        {
+          "name": "Rotated channels follow the pairing rule",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nB, H, T, D, R = 1, 2, 4, 6, 4\nx = torch.randn(B, H, T, D)\ncos = torch.randn(T, R)\nsin = torch.randn(T, R)\nout = {fn}(x, cos, sin)\nx1 = x[..., : R // 2]\nx2 = x[..., R // 2 : R]\nc = cos[:, : R // 2].unsqueeze(0).unsqueeze(0)\ns = sin[:, : R // 2].unsqueeze(0).unsqueeze(0)\nexpected_rot = torch.cat((x1 * c - x2 * s, x1 * s + x2 * c), dim=-1)\nassert torch.allclose(out[..., :R], expected_rot, atol=1e-5), 'Rotated block must follow the RoPE pairing'\n"
+        },
+        {
+          "name": "R == D reduces to full RoPE",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nB, H, T, D = 2, 2, 6, 8\nx = torch.randn(B, H, T, D)\nhalf = torch.randn(T, D // 2)\ncos = torch.cat((half, half), dim=-1)\nsin = torch.cat((half * 0.5, half * 0.5), dim=-1)\nout = {fn}(x, cos, sin)\nx1, x2 = x[..., : D // 2], x[..., D // 2 :]\nc = half.unsqueeze(0).unsqueeze(0)\ns = (half * 0.5).unsqueeze(0).unsqueeze(0)\nfull = torch.cat((x1 * c - x2 * s, x1 * s + x2 * c), dim=-1)\nassert torch.allclose(out, full, atol=1e-5), 'Full rotation must match full RoPE'\nassert not torch.allclose(out, x, atol=1e-3), 'Something must actually rotate'\n"
+        },
+        {
+          "name": "Rotation preserves per-position norms",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nB, H, T, D, R = 2, 4, 5, 8, 6\nx = torch.randn(B, H, T, D)\ntheta = torch.rand(T, R // 2) * 6.28\nones = torch.ones(T, R // 2)\ncos = torch.cat((theta.cos(), theta.cos()), dim=-1)\nsin = torch.cat((theta.sin(), theta.sin()), dim=-1)\nout = {fn}(x, cos, sin)\nassert torch.allclose(out.norm(dim=-1), x.norm(dim=-1), atol=1e-4), 'A rotary pair is an orthogonal 2x2 map'\n"
+        },
+        {
+          "name": "GLM-4.5-style 75 percent split",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nB, H, T, D = 1, 1, 3, 16\nR = 12  # GLM-4.5: partial_rotary_factor 0.75\nx = torch.randn(B, H, T, D)\nhalf = torch.randn(T, R // 2)\ncos = torch.cat((half, half), dim=-1)\nsin = torch.cat((half, half), dim=-1)\nout = {fn}(x, cos, sin)\nassert torch.equal(out[..., R:], x[..., 12:]), 'The unrotated 25% acts as content registers'\nassert not torch.allclose(out[..., :R], x[..., :R], atol=1e-4), 'The rotated 75% must change'\n"
+        },
+        {
+          "name": "Gradients flow",
+          "code": "\nimport torch\nB, H, T, D, R = 1, 2, 4, 8, 4\nx = torch.randn(B, H, T, D, requires_grad=True)\ncos = torch.randn(T, R, requires_grad=True)\nsin = torch.randn(T, R, requires_grad=True)\nout = {fn}(x, cos, sin)\nout.pow(2).sum().backward()\nassert x.grad is not None and x.grad.abs().sum() > 0\nassert cos.grad is not None and cos.grad.abs().sum() > 0\nassert sin.grad is not None and sin.grad.abs().sum() > 0\n"
+        }
+      ]
+    },
+    {
+      "id": "delta_rule_scan",
+      "title": "Delta-Rule State Scan (Kimi K3 KDA)",
+      "titleZh": "Delta 规则状态扫描（Kimi K3 KDA）",
+      "difficulty": "Hard",
+      "functionName": "delta_rule_scan",
+      "hint": "Expand the update: `S = S - beta * outer(k, k @ S - v)` — remove the current prediction along k, then add the target. Loop over T recording states.",
+      "hintZh": "展开更新式：`S = S − beta · outer(k, k @ S − v)`——先沿 k 减去当前预测，再加上目标。对 T 循环记录状态。",
+      "descriptionEn": "Implement the recurrent state update behind Kimi K3's KDA (Kimi Delta Attention) layers — 69 of K3's 93 layers — and the gated-DeltaNet family of linear attentions also used by Qwen3-Next and MiniMax.\n\nLinear attention keeps a fixed-size state `S (d_k, d_v)` instead of a growing KV cache. The delta rule updates it associatively and self-correcting: before writing the new association `(k_t, v_t)`, the state first removes whatever it currently predicts for `k_t`, then writes the residual. With decay strength `beta_t`:\n\n`S_t = S_{t-1} (I - beta_t * k_t k_t^T) + beta_t * v_t k_t^T`\n\nBecause the write is the prediction error (delta), repeating the same association drives `k_t S` toward `v_t` — the test-time-training property that lets these layers recall associations exactly without attention over history.\n\n**Signature:** `delta_rule_scan(k, v, beta, S0) -> Tensor`\n\n**Parameters:**\n- `k` — `(T, d_k)` keys, unit-normalized rows\n- `v` — `(T, d_v)` values\n- `beta` — `(T,)` gate strengths in `[0, 1]`\n- `S0` — `(d_k, d_v)` initial state\n\n**Returns:** `(T, d_k, d_v)`, the state AFTER each step's update\n\n**Constraints:**\n- Step order is sequential over `T`; each output row is the post-update state\n- `beta = 0` leaves the state untouched for that step",
+      "descriptionZh": "实现 Kimi K3 的 KDA（Kimi Delta Attention）层背后的递归状态更新——K3 共 93 层里占 69 层——以及 Qwen3-Next、MiniMax 使用的 gated-DeltaNet 系线性注意力。\n\n线性注意力维护固定尺寸状态 `S (d_k, d_v)` 而非增长的 KV cache。delta 规则的更新是联想且自纠错的：写入新关联 `(k_t, v_t)` 前，状态先减去它当前对 `k_t` 的预测，再写入残差。衰减强度 `beta_t`：\n\n`S_t = S_{t-1} (I − beta_t · k_t k_t^T) + beta_t · v_t k_t^T`\n\n因为写入的是预测误差（delta），重复同一关联会把 `k_t S` 推向 `v_t`——test-time-training 性质让这些层无需对历史做注意力就能精确召回关联。\n\n**签名:** `delta_rule_scan(k, v, beta, S0) -> Tensor`\n\n**参数:**\n- `k` — `(T, d_k)` 键，行单位归一\n- `v` — `(T, d_v)` 值\n- `beta` — `(T,)` 门控强度，`[0, 1]`\n- `S0` — `(d_k, d_v)` 初始状态\n\n**返回:** `(T, d_k, d_v)`，每步更新后的状态\n\n**约束:**\n- 按序对 `T` 逐步执行；每行输出是更新后状态\n- `beta = 0` 的步骤状态不变",
+      "tests": [
+        {
+          "name": "Matches the manual recurrence",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nT, dk, dv = 6, 4, 3\nk = torch.nn.functional.normalize(torch.randn(T, dk), dim=-1)\nv = torch.randn(T, dv)\nbeta = torch.rand(T)\nS0 = torch.randn(dk, dv)\nout = {fn}(k, v, beta, S0)\nS = S0.clone()\nstates = []\nfor t in range(T):\n    S = (torch.eye(dk) - beta[t] * torch.outer(k[t], k[t])) @ S + beta[t] * torch.outer(k[t], v[t])\n    states.append(S.clone())\nexpected = torch.stack(states)\nassert out.shape == (T, dk, dv), f'Expected (T, dk, dv), got {out.shape}'\nassert torch.allclose(out, expected, atol=1e-5), 'State recurrence mismatch'\n"
+        },
+        {
+          "name": "Zero beta freezes the state",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nT, dk, dv = 4, 3, 2\nk = torch.nn.functional.normalize(torch.randn(T, dk), dim=-1)\nv = torch.randn(T, dv)\nbeta = torch.zeros(T)\nS0 = torch.randn(dk, dv)\nout = {fn}(k, v, beta, S0)\nassert torch.allclose(out, S0.unsqueeze(0).expand(T, dk, dv), atol=1e-6), 'beta=0 must not touch the state'\n"
+        },
+        {
+          "name": "Unit beta with v=k projects onto the key direction",
+          "code": "\nimport torch\ntorch.manual_seed(2)\ndk, dv = 3, 3\nk1 = torch.nn.functional.normalize(torch.randn(dk), dim=0)\nv1 = k1  # write the key as its own value\nS0 = torch.eye(dk)\nout = {fn}(k1.view(1, dk), v1.view(1, dv), torch.ones(1), S0)\nS1 = out[0]\nexpected = S0 - torch.outer(k1, k1 @ S0 - v1)  # removes the current prediction along k1, writes the residual\nassert torch.allclose(S1, expected, atol=1e-5), 'Delta write removes the prediction error'\nassert torch.allclose(k1 @ S1, k1, atol=1e-5), 'After writing (k, k), the state maps k to k'\n"
+        },
+        {
+          "name": "Repeated writes converge to exact recall",
+          "code": "\nimport torch\ntorch.manual_seed(3)\ndk, dv = 8, 6\nk1 = torch.nn.functional.normalize(torch.randn(dk), dim=0)\nv1 = torch.randn(dv)\nT = 200\nk = k1.unsqueeze(0).expand(T, dk).contiguous()\nv = v1.unsqueeze(0).expand(T, dv).contiguous()\nbeta = torch.ones(T)\nout = {fn}(k, v, beta, torch.zeros(dk, dv))\nfinal = out[-1]\nassert torch.allclose(k1 @ final, v1, atol=1e-4), 'The delta rule converges: k^T S -> v^T'\n"
+        },
+        {
+          "name": "Zero state stays zero until written",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nT, dk, dv = 5, 4, 4\nk = torch.nn.functional.normalize(torch.randn(T, dk), dim=-1)\nv = torch.randn(T, dv)\nbeta = torch.tensor([0.0, 0.0, 1.0, 0.5, 1.0])\nout = {fn}(k, v, beta, torch.zeros(dk, dv))\nassert torch.allclose(out[0], torch.zeros(dk, dv), atol=1e-7)\nassert torch.allclose(out[1], torch.zeros(dk, dv), atol=1e-7), 'No gate, no state'\nassert not torch.allclose(out[2], torch.zeros(dk, dv), atol=1e-6), 'Gate open must write'\n"
+        },
+        {
+          "name": "Differentiable through the scan",
+          "code": "\nimport torch\ntorch.manual_seed(5)\nT, dk, dv = 4, 3, 2\nk = torch.nn.functional.normalize(torch.randn(T, dk), dim=-1).requires_grad_(True)\nv = torch.randn(T, dv, requires_grad=True)\nbeta = torch.rand(T)\nS0 = torch.randn(dk, dv)\nout = {fn}(k, v, beta, S0)\nout.pow(2).sum().backward()\nassert k.grad is not None and k.grad.abs().sum() > 0, 'Keys must receive gradient'\nassert v.grad is not None and v.grad.abs().sum() > 0, 'Values must receive gradient'\n"
+        }
+      ]
+    },
+    {
+      "id": "newton_schulz",
+      "title": "Newton-Schulz Orthogonalization (Muon)",
+      "titleZh": "Newton-Schulz 正交化（Muon）",
+      "difficulty": "Hard",
+      "functionName": "newton_schulz",
+      "hint": "Iterate `A = X @ X.T; B = b*A + c*(A @ A); X = a*X + B @ X`. Keep the input dtype; only the initial Frobenius normalization uses `G.norm()`.",
+      "hintZh": "迭代 `A = X @ X.T; B = b*A + c*(A@A); X = a*X + B @ X`。保持输入 dtype；只有初始 Frobenius 归一用 `G.norm()`。",
+      "descriptionEn": "Implement the matrix iteration at the heart of the Muon optimizer — the optimizer Kimi K2 scaled to 1 trillion parameters with the MuonClip recipe (15.5T training tokens, zero loss spikes), beating AdamW on token efficiency.\n\nMuon updates every 2-D weight matrix with a momentum step that is first equalized: large singular values are pushed down, small ones pushed up, all toward the unit spectrum. The equalizer is a quintic Newton-Schulz iteration — matrix multiplications only, no SVD, which is what makes it cheap enough to sit inside an optimizer step. Given the Frobenius-normalized matrix `X = G / (||G||_F + 1e-7)`:\n\n`A = X X^T;  B = b * A + c * (A @ A);  X = a * X + B @ X`  (repeated `steps` times)\n\nwith the standard quintic coefficients `a = 3.4445, b = -4.7750, c = 2.0315`. Five sweeps take a typical matrix's singular-value spread from an order of magnitude down to about 1.6, with every value inside a narrow band around 1.\n\n**Signature:** `newton_schulz(G, steps=5) -> Tensor`\n\n**Parameters:**\n- `G` — 2-D matrix, any shape (tall, wide, or square)\n- `steps` — iteration count\n\n**Returns:** the equalized matrix, same shape and dtype as the input\n\n**Constraints:**\n- Normalize by the Frobenius norm first: `X = G / (G.norm() + 1e-7)`\n- Use exactly the coefficients above; no SVD calls\n- The result is scale-invariant: `newton_schulz(c * G)` equals `newton_schulz(G)` for any `c > 0`",
+      "descriptionZh": "实现 Muon 优化器核心的矩阵迭代——Kimi K2 用 MuonClip 配方把它推到 1 万亿参数（15.5T 训练 token、零 loss spike）的优化器，token 效率压过 AdamW。\n\nMuon 对每个 2-D 权重矩阵的动量步先做谱均衡：大奇异值压下去、小奇异值托起来，全部推向单位谱。均衡器是五次 Newton-Schulz 迭代——只用矩阵乘、不用 SVD，这才便宜到能塞进优化器步。给定 Frobenius 归一后的矩阵 `X = G / (||G||_F + 1e-7)`：\n\n`A = X X^T;  B = b·A + c·(A @ A);  X = a·X + B @ X`（重复 `steps` 次）\n\n标准五次系数 `a = 3.4445, b = −4.7750, c = 2.0315`。五轮把典型矩阵的奇异值谱距从一个数量级压到约 1.6，所有值落在 1 附近的窄带里。\n\n**签名:** `newton_schulz(G, steps=5) -> Tensor`\n\n**参数:**\n- `G` — 任意形状（高、宽、方阵）的 2-D 矩阵\n- `steps` — 迭代次数\n\n**返回:** 谱均衡后的矩阵，形状与 dtype 同输入\n\n**约束:**\n- 先做 Frobenius 归一：`X = G / (G.norm() + 1e-7)`\n- 严格用上述系数；不许调 SVD\n- 结果尺度不变：任意 `c > 0` 有 `newton_schulz(c·G) == newton_schulz(G)`",
+      "tests": [
+        {
+          "name": "Matches the reference iteration",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nG = torch.randn(6, 9)\na, b, c = 3.4445, -4.7750, 2.0315\nX = G / (G.norm() + 1e-7)\nfor _ in range(5):\n    A = X @ X.T\n    B = b * A + c * (A @ A)\n    X = a * X + B @ X\nout = {fn}(G, steps=5)\nassert torch.allclose(out, X, atol=1e-6), 'Must reproduce the quintic Newton-Schulz iteration'\n"
+        },
+        {
+          "name": "Works for tall, wide and square inputs",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nfor shape in [(16, 8), (8, 16), (8, 8)]:\n    G = torch.randn(*shape)\n    out = {fn}(G, steps=5)\n    assert out.shape == shape, f'{shape}: shape changed to {out.shape}'\n    assert out.dtype == G.dtype\n    assert torch.isfinite(out).all(), f'{shape}: non-finite output'\n"
+        },
+        {
+          "name": "Singular values collapse into a band around one",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nG = torch.randn(8, 16)\nnormalized = G / (G.norm() + 1e-7)\nbefore = torch.linalg.svdvals(normalized)\nafter = torch.linalg.svdvals({fn}(G, steps=5))\nassert (after > 0.5).all() and (after < 1.3).all(), f'Singular values must land in [0.5, 1.3], got {after}'\nassert after.max() / after.min() < 2.0, f'Spread must collapse below 2, got {after.max() / after.min()}'\nassert after.max() / after.min() < before.max() / before.min(), 'Equalization must strictly shrink the spread'\n"
+        },
+        {
+          "name": "Extra steps stay bounded",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nG = torch.randn(12, 5)\nx5 = {fn}(G, steps=5)\nx10 = {fn}(G, steps=10)\nassert torch.isfinite(x10).all(), 'The iteration must not diverge'\nassert (x5 - x10).abs().max() < 0.5, f'More steps should stay near the fixed band, moved {(x5 - x10).abs().max()}'\nsv10 = torch.linalg.svdvals(x10)\nassert sv10.max() / sv10.min() < 2.5, 'Ten steps keep the equalized spectrum'\n"
+        },
+        {
+          "name": "Scale invariance from the Frobenius normalization",
+          "code": "\nimport torch\ntorch.manual_seed(5)\nG = torch.randn(6, 6)\nout1 = {fn}(G, steps=5)\nout100 = {fn}(G * 100.0, steps=5)\nassert torch.allclose(out1, out100, atol=1e-4), 'Scaling the input must not change the output'\n"
+        },
+        {
+          "name": "Gradient flows through the iteration",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nG = torch.randn(7, 4, requires_grad=True)\nout = {fn}(G, steps=3)\nout.sum().backward()\nassert G.grad is not None and G.grad.abs().sum() > 0, 'Muon needs gradients through the orthogonalizer'\n"
         }
       ]
     }
