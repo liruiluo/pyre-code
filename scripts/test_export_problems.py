@@ -27,9 +27,11 @@ def test_build_problem_catalog_includes_all_registered_tasks():
 
 
 def test_exported_problem_shape():
-    problem = build_problem_catalog()["problems"][0]
-    assert set(problem) == {
+    problems = build_problem_catalog()["problems"]
+    code_problem = next(p for p in problems if p.get("type", "code") == "code")
+    assert set(code_problem) == {
         "id",
+        "type",
         "title",
         "titleZh",
         "difficulty",
@@ -40,6 +42,24 @@ def test_exported_problem_shape():
         "descriptionZh",
         "tests",
     }
+    choice_problem = next(p for p in problems if p.get("type") == "choice")
+    assert set(choice_problem) == {
+        "id",
+        "type",
+        "title",
+        "titleZh",
+        "difficulty",
+        "functionName",
+        "hint",
+        "hintZh",
+        "descriptionEn",
+        "descriptionZh",
+        "tests",
+        "options",
+        "explanationEn",
+        "explanationZh",
+    }
+    assert "answer" not in choice_problem
 
 
 def test_build_problem_catalog_recovers_from_malformed_existing_json(tmp_path):

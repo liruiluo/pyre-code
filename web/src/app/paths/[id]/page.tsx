@@ -18,6 +18,7 @@ interface PathStep {
   titleZh: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   status: 'todo' | 'attempted' | 'solved';
+  type?: 'code' | 'choice';
 }
 
 type PathDetail = Omit<LearningPath, 'problems'> & {
@@ -165,7 +166,7 @@ export default function PathDetailPage() {
 
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm">{stepTitle}</div>
-                  <div className="mono text-[11.5px] text-text-3 mt-0.5">{step.id}.py</div>
+                  <div className="mono text-[11.5px] text-text-3 mt-0.5">{step.type === 'choice' ? step.id : `${step.id}.py`}</div>
                 </div>
 
                 <Badge variant={step.difficulty.toLowerCase() as 'easy' | 'medium' | 'hard'}>

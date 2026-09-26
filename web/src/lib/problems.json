@@ -2,6 +2,7 @@
   "problems": [
     {
       "id": "cross_entropy",
+      "type": "code",
       "title": "Cross-Entropy Loss",
       "titleZh": "交叉熵损失",
       "difficulty": "Easy",
@@ -31,6 +32,7 @@
     },
     {
       "id": "dropout",
+      "type": "code",
       "title": "Implement Dropout",
       "titleZh": "实现 Dropout",
       "difficulty": "Easy",
@@ -60,6 +62,7 @@
     },
     {
       "id": "embedding",
+      "type": "code",
       "title": "Embedding Layer",
       "titleZh": "Embedding 层",
       "difficulty": "Easy",
@@ -89,6 +92,7 @@
     },
     {
       "id": "gelu",
+      "type": "code",
       "title": "GELU Activation",
       "titleZh": "GELU 激活函数",
       "difficulty": "Easy",
@@ -118,6 +122,7 @@
     },
     {
       "id": "gradient_accumulation",
+      "type": "code",
       "title": "Gradient Accumulation",
       "titleZh": "梯度累积",
       "difficulty": "Easy",
@@ -143,6 +148,7 @@
     },
     {
       "id": "gradient_clipping",
+      "type": "code",
       "title": "Gradient Norm Clipping",
       "titleZh": "梯度范数裁剪",
       "difficulty": "Easy",
@@ -172,6 +178,7 @@
     },
     {
       "id": "relu",
+      "type": "code",
       "title": "Implement ReLU",
       "titleZh": "实现 ReLU",
       "difficulty": "Easy",
@@ -201,6 +208,7 @@
     },
     {
       "id": "softmax",
+      "type": "code",
       "title": "Implement Softmax",
       "titleZh": "实现 Softmax",
       "difficulty": "Easy",
@@ -230,6 +238,7 @@
     },
     {
       "id": "weight_init",
+      "type": "code",
       "title": "Kaiming Initialization",
       "titleZh": "Kaiming 初始化",
       "difficulty": "Easy",
@@ -259,6 +268,7 @@
     },
     {
       "id": "adam",
+      "type": "code",
       "title": "Adam Optimizer",
       "titleZh": "Adam 优化器",
       "difficulty": "Medium",
@@ -284,6 +294,7 @@
     },
     {
       "id": "batchnorm",
+      "type": "code",
       "title": "Implement BatchNorm",
       "titleZh": "实现 BatchNorm",
       "difficulty": "Medium",
@@ -313,6 +324,7 @@
     },
     {
       "id": "beam_search",
+      "type": "code",
       "title": "Beam Search Decoding",
       "titleZh": "束搜索解码",
       "difficulty": "Medium",
@@ -342,6 +354,7 @@
     },
     {
       "id": "cosine_lr",
+      "type": "code",
       "title": "Cosine LR Scheduler with Warmup",
       "titleZh": "余弦学习率调度（含预热）",
       "difficulty": "Medium",
@@ -375,6 +388,7 @@
     },
     {
       "id": "cross_attention",
+      "type": "code",
       "title": "Multi-Head Cross-Attention",
       "titleZh": "多头交叉注意力",
       "difficulty": "Medium",
@@ -408,6 +422,7 @@
     },
     {
       "id": "layernorm",
+      "type": "code",
       "title": "Implement LayerNorm",
       "titleZh": "实现 LayerNorm",
       "difficulty": "Medium",
@@ -433,6 +448,7 @@
     },
     {
       "id": "linear",
+      "type": "code",
       "title": "Simple Linear Layer",
       "titleZh": "简单线性层",
       "difficulty": "Medium",
@@ -458,6 +474,7 @@
     },
     {
       "id": "linear_regression",
+      "type": "code",
       "title": "Linear Regression",
       "titleZh": "线性回归",
       "difficulty": "Medium",
@@ -495,6 +512,7 @@
     },
     {
       "id": "lora",
+      "type": "code",
       "title": "LoRA (Low-Rank Adaptation)",
       "titleZh": "LoRA（低秩适配）",
       "difficulty": "Medium",
@@ -528,6 +546,7 @@
     },
     {
       "id": "mlp",
+      "type": "code",
       "title": "SwiGLU MLP",
       "titleZh": "SwiGLU MLP",
       "difficulty": "Medium",
@@ -561,6 +580,7 @@
     },
     {
       "id": "rmsnorm",
+      "type": "code",
       "title": "Implement RMSNorm",
       "titleZh": "实现 RMSNorm",
       "difficulty": "Medium",
@@ -594,6 +614,7 @@
     },
     {
       "id": "topk_sampling",
+      "type": "code",
       "title": "Top-k / Top-p Sampling",
       "titleZh": "Top-k / Top-p 采样",
       "difficulty": "Medium",
@@ -627,6 +648,7 @@
     },
     {
       "id": "attention",
+      "type": "code",
       "title": "Softmax Attention",
       "titleZh": "Softmax 注意力",
       "difficulty": "Easy",
@@ -656,6 +678,7 @@
     },
     {
       "id": "bpe",
+      "type": "code",
       "title": "Byte-Pair Encoding (BPE)",
       "titleZh": "字节对编码（BPE）",
       "difficulty": "Hard",
@@ -693,6 +716,7 @@
     },
     {
       "id": "causal_attention",
+      "type": "code",
       "title": "Causal Self-Attention",
       "titleZh": "因果自注意力",
       "difficulty": "Medium",
@@ -726,6 +750,7 @@
     },
     {
       "id": "dpo_loss",
+      "type": "code",
       "title": "DPO (Direct Preference Optimization) Loss",
       "titleZh": "DPO 损失",
       "difficulty": "Medium",
@@ -759,6 +784,7 @@
     },
     {
       "id": "flash_attention",
+      "type": "code",
       "title": "Flash Attention (Tiled)",
       "titleZh": "Flash Attention（分块）",
       "difficulty": "Hard",
@@ -788,6 +814,7 @@
     },
     {
       "id": "gpt2_block",
+      "type": "code",
       "title": "GPT-2 Transformer Block",
       "titleZh": "GPT-2 Transformer Block",
       "difficulty": "Hard",
@@ -821,6 +848,7 @@
     },
     {
       "id": "gqa",
+      "type": "code",
       "title": "Grouped Query Attention",
       "titleZh": "分组查询注意力（GQA）",
       "difficulty": "Hard",
@@ -858,6 +886,7 @@
     },
     {
       "id": "grpo_loss",
+      "type": "code",
       "title": "GRPO (Group Relative Policy Optimization) Loss",
       "titleZh": "GRPO 损失",
       "difficulty": "Hard",
@@ -887,6 +916,7 @@
     },
     {
       "id": "int8_quantization",
+      "type": "code",
       "title": "INT8 Quantized Linear",
       "titleZh": "INT8 量化线性层",
       "difficulty": "Hard",
@@ -920,6 +950,7 @@
     },
     {
       "id": "kv_cache",
+      "type": "code",
       "title": "KV Cache Attention",
       "titleZh": "KV Cache 注意力",
       "difficulty": "Hard",
@@ -953,6 +984,7 @@
     },
     {
       "id": "linear_attention",
+      "type": "code",
       "title": "Linear Self-Attention",
       "titleZh": "线性自注意力",
       "difficulty": "Hard",
@@ -986,6 +1018,7 @@
     },
     {
       "id": "mha",
+      "type": "code",
       "title": "Multi-Head Attention",
       "titleZh": "多头注意力",
       "difficulty": "Hard",
@@ -1027,6 +1060,7 @@
     },
     {
       "id": "moe",
+      "type": "code",
       "title": "Mixture of Experts (MoE)",
       "titleZh": "混合专家（MoE）",
       "difficulty": "Hard",
@@ -1060,6 +1094,7 @@
     },
     {
       "id": "ppo_loss",
+      "type": "code",
       "title": "PPO (Proximal Policy Optimization) Clipped Loss",
       "titleZh": "PPO 损失",
       "difficulty": "Medium",
@@ -1085,6 +1120,7 @@
     },
     {
       "id": "rope",
+      "type": "code",
       "title": "Rotary Position Embedding (RoPE)",
       "titleZh": "旋转位置编码（RoPE）",
       "difficulty": "Medium",
@@ -1118,6 +1154,7 @@
     },
     {
       "id": "sliding_window",
+      "type": "code",
       "title": "Sliding Window Attention",
       "titleZh": "滑动窗口注意力",
       "difficulty": "Medium",
@@ -1151,6 +1188,7 @@
     },
     {
       "id": "speculative_decoding",
+      "type": "code",
       "title": "Speculative Decoding",
       "titleZh": "推测解码",
       "difficulty": "Hard",
@@ -1180,6 +1218,7 @@
     },
     {
       "id": "sinusoidal_pe",
+      "type": "code",
       "title": "Sinusoidal Position Encoding",
       "titleZh": "正弦位置编码",
       "difficulty": "Easy",
@@ -1209,6 +1248,7 @@
     },
     {
       "id": "label_smoothing",
+      "type": "code",
       "title": "Label Smoothing Loss",
       "titleZh": "标签平滑损失",
       "difficulty": "Easy",
@@ -1242,6 +1282,7 @@
     },
     {
       "id": "swiglu",
+      "type": "code",
       "title": "SwiGLU Activation",
       "titleZh": "SwiGLU 激活函数",
       "difficulty": "Medium",
@@ -1267,6 +1308,7 @@
     },
     {
       "id": "alibi",
+      "type": "code",
       "title": "ALiBi Attention",
       "titleZh": "ALiBi 注意力",
       "difficulty": "Medium",
@@ -1296,6 +1338,7 @@
     },
     {
       "id": "ntk_rope",
+      "type": "code",
       "title": "NTK-aware RoPE Scaling",
       "titleZh": "NTK-aware RoPE 缩放",
       "difficulty": "Easy",
@@ -1329,6 +1372,7 @@
     },
     {
       "id": "mixed_precision",
+      "type": "code",
       "title": "Mixed Precision Training Step",
       "titleZh": "混合精度训练步骤",
       "difficulty": "Medium",
@@ -1362,6 +1406,7 @@
     },
     {
       "id": "paged_attention",
+      "type": "code",
       "title": "Paged Attention",
       "titleZh": "分页注意力",
       "difficulty": "Hard",
@@ -1391,6 +1436,7 @@
     },
     {
       "id": "ring_attention",
+      "type": "code",
       "title": "Ring Attention",
       "titleZh": "环形注意力",
       "difficulty": "Hard",
@@ -1420,6 +1466,7 @@
     },
     {
       "id": "tensor_parallel",
+      "type": "code",
       "title": "Tensor Parallel MLP",
       "titleZh": "张量并行 MLP",
       "difficulty": "Hard",
@@ -1449,6 +1496,7 @@
     },
     {
       "id": "fsdp_step",
+      "type": "code",
       "title": "FSDP Training Step",
       "titleZh": "FSDP 训练步骤",
       "difficulty": "Hard",
@@ -1478,6 +1526,7 @@
     },
     {
       "id": "focal_loss",
+      "type": "code",
       "title": "Focal Loss",
       "titleZh": "Focal Loss",
       "difficulty": "Medium",
@@ -1507,6 +1556,7 @@
     },
     {
       "id": "contrastive_loss",
+      "type": "code",
       "title": "Contrastive Loss (InfoNCE)",
       "titleZh": "对比损失（InfoNCE）",
       "difficulty": "Medium",
@@ -1544,6 +1594,7 @@
     },
     {
       "id": "qlora",
+      "type": "code",
       "title": "QLoRA",
       "titleZh": "QLoRA",
       "difficulty": "Hard",
@@ -1577,6 +1628,7 @@
     },
     {
       "id": "mamba_ssm",
+      "type": "code",
       "title": "Mamba SSM Step",
       "titleZh": "Mamba SSM 步骤",
       "difficulty": "Hard",
@@ -1610,6 +1662,7 @@
     },
     {
       "id": "activation_checkpointing",
+      "type": "code",
       "title": "Activation Checkpointing",
       "titleZh": "激活检查点",
       "difficulty": "Medium",
@@ -1639,6 +1692,7 @@
     },
     {
       "id": "diff_attention",
+      "type": "code",
       "title": "Differential Attention",
       "titleZh": "差分注意力",
       "difficulty": "Hard",
@@ -1668,6 +1722,7 @@
     },
     {
       "id": "mla",
+      "type": "code",
       "title": "Multi-Head Latent Attention (MLA)",
       "titleZh": "多头潜在注意力（MLA）",
       "difficulty": "Hard",
@@ -1701,6 +1756,7 @@
     },
     {
       "id": "multi_token_prediction",
+      "type": "code",
       "title": "Multi-Token Prediction Loss",
       "titleZh": "多 Token 预测",
       "difficulty": "Medium",
@@ -1730,6 +1786,7 @@
     },
     {
       "id": "moe_load_balance",
+      "type": "code",
       "title": "MoE Load Balancing Loss",
       "titleZh": "MoE 负载均衡损失",
       "difficulty": "Medium",
@@ -1759,6 +1816,7 @@
     },
     {
       "id": "mcts_search",
+      "type": "code",
       "title": "MCTS for Reasoning",
       "titleZh": "推理蒙特卡洛树搜索",
       "difficulty": "Hard",
@@ -1792,6 +1850,7 @@
     },
     {
       "id": "reward_model",
+      "type": "code",
       "title": "Bradley-Terry Reward Model Loss",
       "titleZh": "Bradley-Terry 奖励模型",
       "difficulty": "Medium",
@@ -1825,6 +1884,7 @@
     },
     {
       "id": "gae_advantages",
+      "type": "code",
       "title": "Generalized Advantage Estimation (GAE)",
       "titleZh": "广义优势估计（GAE）",
       "difficulty": "Medium",
@@ -1854,6 +1914,7 @@
     },
     {
       "id": "grpo_clipped_loss",
+      "type": "code",
       "title": "GRPO Clipped Surrogate Loss",
       "titleZh": "GRPO 裁剪代理损失",
       "difficulty": "Hard",
@@ -1883,6 +1944,7 @@
     },
     {
       "id": "ppo_full_loss",
+      "type": "code",
       "title": "PPO Clipped Policy Loss with GAE",
       "titleZh": "PPO 裁剪策略损失（内置 GAE）",
       "difficulty": "Hard",
@@ -1916,6 +1978,7 @@
     },
     {
       "id": "learnable_pe",
+      "type": "code",
       "title": "Learnable Position Encoding",
       "titleZh": "可学习位置编码",
       "difficulty": "Easy",
@@ -1945,6 +2008,7 @@
     },
     {
       "id": "temperature_sampling",
+      "type": "code",
       "title": "Temperature Sampling",
       "titleZh": "温度采样",
       "difficulty": "Easy",
@@ -1974,6 +2038,7 @@
     },
     {
       "id": "adamw",
+      "type": "code",
       "title": "AdamW Optimizer",
       "titleZh": "AdamW 优化器",
       "difficulty": "Medium",
@@ -2003,6 +2068,7 @@
     },
     {
       "id": "kl_divergence",
+      "type": "code",
       "title": "KL Divergence from Logits",
       "titleZh": "从 Logits 计算 KL 散度",
       "difficulty": "Medium",
@@ -2036,6 +2102,7 @@
     },
     {
       "id": "kl_penalty",
+      "type": "code",
       "title": "RLHF KL Penalty",
       "titleZh": "RLHF KL 惩罚",
       "difficulty": "Medium",
@@ -2065,6 +2132,7 @@
     },
     {
       "id": "logistic_regression",
+      "type": "code",
       "title": "Logistic Regression",
       "titleZh": "逻辑回归",
       "difficulty": "Medium",
@@ -2098,6 +2166,7 @@
     },
     {
       "id": "reinforce_loss",
+      "type": "code",
       "title": "REINFORCE Policy Gradient Loss",
       "titleZh": "REINFORCE 策略梯度损失",
       "difficulty": "Medium",
@@ -2127,6 +2196,7 @@
     },
     {
       "id": "sft_loss",
+      "type": "code",
       "title": "SFT Masked Language-Model Loss",
       "titleZh": "SFT 掩码语言模型损失",
       "difficulty": "Medium",
@@ -2156,6 +2226,7 @@
     },
     {
       "id": "sgd_momentum",
+      "type": "code",
       "title": "SGD with Momentum",
       "titleZh": "带动量的 SGD",
       "difficulty": "Medium",
@@ -2185,6 +2256,7 @@
     },
     {
       "id": "mqa",
+      "type": "code",
       "title": "Multi-Query Attention",
       "titleZh": "多查询注意力（MQA）",
       "difficulty": "Hard",
@@ -2218,6 +2290,7 @@
     },
     {
       "id": "greedy_decoding",
+      "type": "code",
       "title": "Greedy Decoding",
       "titleZh": "贪心解码",
       "difficulty": "Easy",
@@ -2247,6 +2320,7 @@
     },
     {
       "id": "mse_loss",
+      "type": "code",
       "title": "MSE Loss",
       "titleZh": "均方误差损失",
       "difficulty": "Easy",
@@ -2280,6 +2354,7 @@
     },
     {
       "id": "sgd",
+      "type": "code",
       "title": "SGD Optimizer",
       "titleZh": "SGD 优化器",
       "difficulty": "Easy",
@@ -2309,6 +2384,7 @@
     },
     {
       "id": "continuous_batching",
+      "type": "code",
       "title": "Continuous Batching Schedule",
       "titleZh": "连续批处理调度",
       "difficulty": "Medium",
@@ -2346,6 +2422,7 @@
     },
     {
       "id": "prenorm_postnorm",
+      "type": "code",
       "title": "Pre-Norm vs Post-Norm Residual Block",
       "titleZh": "Pre-Norm 与 Post-Norm 残差块",
       "difficulty": "Medium",
@@ -2379,6 +2456,7 @@
     },
     {
       "id": "softmax_regression",
+      "type": "code",
       "title": "Softmax Regression",
       "titleZh": "Softmax 回归",
       "difficulty": "Medium",
@@ -2412,6 +2490,7 @@
     },
     {
       "id": "transformer_ffn",
+      "type": "code",
       "title": "Transformer Feed-Forward Network",
       "titleZh": "Transformer 前馈网络",
       "difficulty": "Medium",
@@ -2445,6 +2524,7 @@
     },
     {
       "id": "causal_lm_loss",
+      "type": "code",
       "title": "Causal Language-Model Loss",
       "titleZh": "因果语言模型损失",
       "difficulty": "Medium",
@@ -2474,6 +2554,7 @@
     },
     {
       "id": "manual_backprop",
+      "type": "code",
       "title": "Manual Backpropagation for a Tiny MLP",
       "titleZh": "手写 Tiny MLP 反向传播",
       "difficulty": "Medium",
@@ -2507,6 +2588,7 @@
     },
     {
       "id": "transformer_decoder_layer",
+      "type": "code",
       "title": "Transformer Decoder Layer",
       "titleZh": "Transformer 解码器层",
       "difficulty": "Hard",
@@ -2544,6 +2626,7 @@
     },
     {
       "id": "transformer_encoder_layer",
+      "type": "code",
       "title": "Transformer Encoder Layer",
       "titleZh": "Transformer 编码器层",
       "difficulty": "Hard",
@@ -2577,6 +2660,7 @@
     },
     {
       "id": "kd_loss",
+      "type": "code",
       "title": "Knowledge Distillation Loss",
       "titleZh": "知识蒸馏损失",
       "difficulty": "Easy",
@@ -2610,6 +2694,7 @@
     },
     {
       "id": "logit_softcap",
+      "type": "code",
       "title": "Logit Soft-Capping (Gemma-2)",
       "titleZh": "Logit 软顶（Gemma-2）",
       "difficulty": "Easy",
@@ -2647,6 +2732,7 @@
     },
     {
       "id": "react_agent_step",
+      "type": "code",
       "title": "Parse a ReAct Agent Trace",
       "titleZh": "解析 ReAct Agent 轨迹",
       "difficulty": "Easy",
@@ -2680,6 +2766,7 @@
     },
     {
       "id": "tied_lm_logits",
+      "type": "code",
       "title": "Tied Embedding LM Head",
       "titleZh": "共享权重的 LM 头",
       "difficulty": "Easy",
@@ -2713,6 +2800,7 @@
     },
     {
       "id": "agent_loss_mask",
+      "type": "code",
       "title": "Build a Multi-Turn Agent Loss Mask",
       "titleZh": "构建多轮 Agent 损失掩码",
       "difficulty": "Medium",
@@ -2746,6 +2834,7 @@
     },
     {
       "id": "agent_memory_bank",
+      "type": "code",
       "title": "Score an Agent Memory Bank",
       "titleZh": "给 Agent 记忆库打分",
       "difficulty": "Medium",
@@ -2787,6 +2876,7 @@
     },
     {
       "id": "context_truncation",
+      "type": "code",
       "title": "Truncate Agent Context Under a Token Budget",
       "titleZh": "在 token 预算内截断 Agent 上下文",
       "difficulty": "Medium",
@@ -2824,6 +2914,7 @@
     },
     {
       "id": "hidden_distillation",
+      "type": "code",
       "title": "Hidden-State Distillation (FitNets)",
       "titleZh": "隐状态蒸馏（FitNets）",
       "difficulty": "Medium",
@@ -2857,6 +2948,7 @@
     },
     {
       "id": "json_schema_validation",
+      "type": "code",
       "title": "Validate Tool Arguments Against a Schema",
       "titleZh": "按 JSON Schema 校验工具参数",
       "difficulty": "Medium",
@@ -2902,6 +2994,7 @@
     },
     {
       "id": "prefix_kv_reuse",
+      "type": "code",
       "title": "Plan Multi-Turn KV Cache Reuse",
       "titleZh": "规划多轮 KV Cache 复用",
       "difficulty": "Medium",
@@ -2935,6 +3028,7 @@
     },
     {
       "id": "qk_norm",
+      "type": "code",
       "title": "QK-Norm (Qwen3 Style)",
       "titleZh": "QK-Norm（Qwen3 式）",
       "difficulty": "Medium",
@@ -2972,6 +3066,7 @@
     },
     {
       "id": "reverse_kl_loss",
+      "type": "code",
       "title": "Reverse KL Loss (Mode-Seeking)",
       "titleZh": "反向 KL 损失（模式寻求）",
       "difficulty": "Medium",
@@ -3005,6 +3100,7 @@
     },
     {
       "id": "sigmoid_moe_routing",
+      "type": "code",
       "title": "Sigmoid MoE Routing (DeepSeek-V3)",
       "titleZh": "Sigmoid MoE 路由（DeepSeek-V3）",
       "difficulty": "Medium",
@@ -3042,6 +3138,7 @@
     },
     {
       "id": "tool_call_parsing",
+      "type": "code",
       "title": "Parse Qwen-Style Tool Calls",
       "titleZh": "解析 Qwen 风格的工具调用",
       "difficulty": "Medium",
@@ -3079,6 +3176,7 @@
     },
     {
       "id": "topk_kd_loss",
+      "type": "code",
       "title": "Top-k Sparse Distillation Loss",
       "titleZh": "Top-k 稀疏蒸馏损失",
       "difficulty": "Medium",
@@ -3112,6 +3210,7 @@
     },
     {
       "id": "action_level_distillation",
+      "type": "code",
       "title": "Action-Level Agent Distillation",
       "titleZh": "动作级 Agent 蒸馏",
       "difficulty": "Hard",
@@ -3149,6 +3248,7 @@
     },
     {
       "id": "hybrid_attention_mask",
+      "type": "code",
       "title": "Hybrid Local-Global Attention Masks (Gemma-2)",
       "titleZh": "局部-全局混合注意力掩码（Gemma-2）",
       "difficulty": "Hard",
@@ -3190,6 +3290,7 @@
     },
     {
       "id": "on_policy_distillation",
+      "type": "code",
       "title": "On-Policy Distillation Loss (GKD)",
       "titleZh": "在线策略蒸馏损失（GKD）",
       "difficulty": "Hard",
@@ -3227,6 +3328,7 @@
     },
     {
       "id": "shared_expert_moe",
+      "type": "code",
       "title": "Sparse MoE with Shared Expert (Qwen3-MoE)",
       "titleZh": "带共享专家的稀疏 MoE（Qwen3-MoE）",
       "difficulty": "Hard",
@@ -3264,6 +3366,7 @@
     },
     {
       "id": "yarn_rope",
+      "type": "code",
       "title": "YaRN Long-Context RoPE Cache",
       "titleZh": "YaRN 长上下文 RoPE 缓存",
       "difficulty": "Hard",
@@ -3297,6 +3400,7 @@
     },
     {
       "id": "bias_load_balancing",
+      "type": "code",
       "title": "Auxiliary-Loss-Free MoE Routing (DeepSeek-V3)",
       "titleZh": "免辅助损失的 MoE 路由（DeepSeek-V3）",
       "difficulty": "Medium",
@@ -3334,6 +3438,7 @@
     },
     {
       "id": "partial_rope",
+      "type": "code",
       "title": "Partial RoPE (GLM)",
       "titleZh": "部分旋转位置编码（GLM）",
       "difficulty": "Medium",
@@ -3371,6 +3476,7 @@
     },
     {
       "id": "delta_rule_scan",
+      "type": "code",
       "title": "Delta-Rule State Scan (Kimi K3 KDA)",
       "titleZh": "Delta 规则状态扫描（Kimi K3 KDA）",
       "difficulty": "Hard",
@@ -3408,6 +3514,7 @@
     },
     {
       "id": "newton_schulz",
+      "type": "code",
       "title": "Newton-Schulz Orthogonalization (Muon)",
       "titleZh": "Newton-Schulz 正交化（Muon）",
       "difficulty": "Hard",
@@ -3445,6 +3552,7 @@
     },
     {
       "id": "multi_teacher_opd",
+      "type": "code",
       "title": "Multi-Teacher On-Policy Distillation (MiMo MOPD)",
       "titleZh": "多教师在线策略蒸馏（MiMo MOPD）",
       "difficulty": "Hard",
@@ -3486,6 +3594,7 @@
     },
     {
       "id": "on_policy_self_distillation",
+      "type": "code",
       "title": "On-Policy Self-Distillation (OPSD)",
       "titleZh": "在线策略自蒸馏（OPSD）",
       "difficulty": "Hard",
@@ -3524,6 +3633,573 @@
           "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(5)\nB, T, V = 2, 5, 10\nstud = torch.randn(B, T, V)\nteacher_view = torch.randn(B, T, V)\noff = torch.zeros(B, dtype=torch.long)\nmask = torch.tensor([[True, True, True, True, False], [True, True, False, True, True]])\ntemp = 2.0\nout = {fn}(stud, teacher_view, off, mask, temperature=temp)\nlog_p = F.log_softmax(stud / temp, dim=-1)\np = log_p.exp()\nlog_t = F.log_softmax(teacher_view / temp, dim=-1)\nper_tok = (p * (log_p - log_t)).sum(dim=-1)\nexpected = per_tok[mask].mean() * temp ** 2\nassert torch.allclose(out, expected, atol=1e-6), 'offsets=0 must equal the plain on-policy loss'\n"
         }
       ]
+    },
+    {
+      "id": "quiz_continuous_batching",
+      "type": "choice",
+      "title": "Continuous Batching",
+      "titleZh": "连续批处理",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Continuous batching raises inference throughput because:",
+      "descriptionZh": "连续批处理（continuous batching）提升推理吞吐的原因是：",
+      "options": [
+        "it batches only equal-length sequences",
+        "finished requests exit and new requests join at every iteration — no padding to the batch's longest sequence",
+        "it sorts requests by length once at admission",
+        "it prefixes all requests with a shared system prompt"
+      ],
+      "explanationEn": "The scheduler swaps sequences at token-level granularity, keeping the GPU busy; static batches waste compute on padding and stranded slots.",
+      "explanationZh": "调度器以 token 级粒度换入换出序列，GPU 始终有活干；静态批处理把算力浪费在 padding 和空位上。",
+      "tests": []
+    },
+    {
+      "id": "quiz_dpo",
+      "type": "choice",
+      "title": "DPO's Move",
+      "titleZh": "DPO 的做法",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "DPO's central move is:",
+      "descriptionZh": "DPO 的核心操作是：",
+      "options": [
+        "distilling preferences from a teacher model",
+        "optimizing preference pairs directly with a classification-style loss, skipping explicit reward-model training and RL",
+        "running PPO with a preference-shaped reward",
+        "weight-averaging preferred and rejected responses"
+      ],
+      "explanationEn": "The Bradley-Terry likelihood re-derives into a loss over the log-ratio of chosen vs rejected policy probabilities; no reward model to sample, no rollout loop.",
+      "explanationZh": "Bradley-Terry 似然重排成 chosen/rejected 策略概率对数比的损失；不用采样奖励模型，也不用 rollout 循环。",
+      "tests": []
+    },
+    {
+      "id": "quiz_flash_attn",
+      "type": "choice",
+      "title": "FlashAttention Gain",
+      "titleZh": "FlashAttention 的收益来源",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "FlashAttention's speedup over naive attention mainly comes from:",
+      "descriptionZh": "FlashAttention 比朴素注意力快，主要因为：",
+      "options": [
+        "approximating softmax with a polynomial",
+        "IO-awareness — tiling the computation so the full attention matrix never materializes in HBM",
+        "quantizing keys and values to int8",
+        "skipping causal-masked upper-triangle FLOPs only"
+      ],
+      "explanationEn": "Same FLOPs, vastly fewer HBM reads/writes: tiles stay in SRAM with an online-softmax rescale. It computes exact attention — memory traffic was the real bottleneck.",
+      "explanationZh": "FLOPs 不变、HBM 读写大减：分块驻留 SRAM，在线 softmax 逐步缩放。算的是精确注意力——瓶颈本来就在访存。",
+      "tests": []
+    },
+    {
+      "id": "quiz_grad_ckpt",
+      "type": "choice",
+      "title": "Gradient Checkpointing Trade",
+      "titleZh": "梯度检查点的交易",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Gradient checkpointing trades:",
+      "descriptionZh": "梯度检查点（gradient checkpointing）用的是什么交易？",
+      "options": [
+        "extra forward recomputation for lower activation memory",
+        "lower precision for faster matmuls",
+        "network bandwidth for disk space",
+        "stale gradients for throughput"
+      ],
+      "explanationEn": "Store only layer inputs; recompute the forward activations during backward — roughly one extra forward pass buys a large cut in activation memory.",
+      "explanationZh": "只存每层输入，反向时重算前向激活——大约多一次前向的开销，换大幅下降的激活内存。",
+      "tests": []
+    },
+    {
+      "id": "quiz_grpo_baseline",
+      "type": "choice",
+      "title": "GRPO Baseline",
+      "titleZh": "GRPO 的基线",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "GRPO removes the PPO value network by using:",
+      "descriptionZh": "GRPO 去掉 PPO 的价值网络，改用：",
+      "options": [
+        "a learned reward model as baseline",
+        "the mean return of a group of responses sampled for the same prompt",
+        "no baseline at all",
+        "the KL penalty as the baseline"
+      ],
+      "explanationEn": "Advantage = reward minus the group mean (optionally std-normalized); one prompt's multiple samples become their own baseline — cheaper than training a separate critic.",
+      "explanationZh": "优势 = 奖励减去组均值（可选做标准差归一化）；同一提示的一组样本互为基线——比训练独立 critic 便宜。",
+      "tests": []
+    },
+    {
+      "id": "quiz_mla_pioneer",
+      "type": "choice",
+      "title": "MLA Origin",
+      "titleZh": "MLA 的出处",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Which open-weights family introduced Multi-head Latent Attention (MLA), compressing the KV cache into a small per-token latent?",
+      "descriptionZh": "多头潜在注意力（MLA，把 KV 缓存压缩成逐 token 的低维潜在向量）是哪个开源模型家族首先提出的？",
+      "options": [
+        "Qwen",
+        "Llama",
+        "DeepSeek",
+        "Mistral"
+      ],
+      "explanationEn": "DeepSeek-V2 (2024) introduced MLA: only a compressed joint latent is cached, and K/V heads are re-derived at attention time. DeepSeek-V3 keeps it, and Kimi K3 uses a gated variant.",
+      "explanationZh": "DeepSeek-V2（2024）提出 MLA：只缓存压缩后的联合潜在向量，注意力计算时再还原 K/V 头。DeepSeek-V3 沿用，Kimi K3 用的是门控变体。",
+      "tests": []
+    },
+    {
+      "id": "quiz_opd_property",
+      "type": "choice",
+      "title": "On-Policy Distillation Core",
+      "titleZh": "在线策略蒸馏核心",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "The defining property of on-policy distillation is:",
+      "descriptionZh": "在线策略蒸馏（on-policy distillation）的定义性特征是：",
+      "options": [
+        "the student trains on sequences sampled from its own current policy, with the teacher scoring those tokens",
+        "the teacher generates the training sequences for the student",
+        "the student imitates a dataset distilled once from the teacher",
+        "the loss is computed only on tool-call tokens"
+      ],
+      "explanationEn": "On-policy = the rollout distribution is the student's own; the teacher only scores, giving a dense per-token signal that behaves like RL with a learned reward — far cheaper than reward-model sampling.",
+      "explanationZh": "On-policy 指 rollout 分布来自学生自身；教师只打分，给出逐 token 的稠密信号——效果像带学习奖励的 RL，却比采样奖励模型便宜得多。",
+      "tests": []
+    },
+    {
+      "id": "quiz_partial_rope",
+      "type": "choice",
+      "title": "Partial RoPE",
+      "titleZh": "部分 RoPE",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "In GLM-style 'partial RoPE', some attention layers:",
+      "descriptionZh": "GLM 式的 partial RoPE 指的是部分注意力层：",
+      "options": [
+        "rotate only the key vectors, leaving queries unrotated",
+        "apply RoPE to only part of each head's dimension, leaving the rest position-free",
+        "use two different rotation frequencies per head",
+        "skip positional information in the value path only"
+      ],
+      "explanationEn": "Partial RoPE rotates a slice of the head dimension and leaves the remainder unrotated, so one model can mix strongly-positional and position-free subspaces across layers.",
+      "explanationZh": "Partial RoPE 只旋转头维度的前一段，剩下的不旋转（无位置信息），让同一模型在不同层混合强位置与位置无关的子空间。",
+      "tests": []
+    },
+    {
+      "id": "quiz_qk_norm",
+      "type": "choice",
+      "title": "QK-Norm Purpose",
+      "titleZh": "QK-Norm 的作用",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "QK-Norm (as used in Qwen3 and Gemma-3) exists to:",
+      "descriptionZh": "QK-Norm（Qwen3、Gemma-3 都在用）的目的是：",
+      "options": [
+        "normalize the attention output distribution",
+        "stabilize attention logits by L2-normalizing queries and keys before the dot product",
+        "replace RoPE with a learned positional bias",
+        "reduce the KV cache size"
+      ],
+      "explanationEn": "L2-normalizing Q and K bounds the logit magnitude, preventing attention-logit explosion in deep models — a cheap, parameter-free stabilizer.",
+      "explanationZh": "对 Q、K 做 L2 归一化可以限制注意力分数的大小，防止深层模型的 logits 爆炸——一个零参数的训练稳定器。",
+      "tests": []
+    },
+    {
+      "id": "quiz_tp_pp_ep",
+      "type": "choice",
+      "title": "Expert Parallelism",
+      "titleZh": "专家并行",
+      "difficulty": "Easy",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Placing different MoE experts on different devices is called:",
+      "descriptionZh": "把不同的 MoE 专家放在不同设备上叫：",
+      "options": [
+        "Tensor parallelism",
+        "Pipeline parallelism",
+        "Expert parallelism",
+        "Sequence parallelism"
+      ],
+      "explanationEn": "TP splits each matmul across devices; PP splits layers into stages; EP shards experts — all-to-all dispatches route tokens to the devices owning each expert.",
+      "explanationZh": "TP 按设备切分单个矩阵乘；PP 把层切成流水段；EP 切分专家——用 all-to-all 把 token 送到专家所在的设备。",
+      "tests": []
+    },
+    {
+      "id": "quiz_1m_context",
+      "type": "choice",
+      "title": "1M Context Club",
+      "titleZh": "1M 上下文俱乐部",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Which pair of 2026 open-weight flagships advertise ~1M-token context windows?",
+      "descriptionZh": "哪一对 2026 年开源旗舰宣称支持约 1M token 的上下文窗口？",
+      "options": [
+        "Kimi K3 and GLM-5.3",
+        "MiMo-V2.6 and Qwen3.8",
+        "DeepSeek-V3 and Llama-4",
+        "None — no open model exceeds 256K"
+      ],
+      "explanationEn": "Kimi K3 (hybrid KDA stack) and GLM-5.3 (753B, DSA-based MoE) both claim 1M-token context in 2026.",
+      "explanationZh": "Kimi K3（KDA 混合栈）和 GLM-5.3（753B，DSA 稀疏注意力 MoE）在 2026 年都宣称 1M token 上下文。",
+      "tests": []
+    },
+    {
+      "id": "quiz_async_rl",
+      "type": "choice",
+      "title": "Async RL Decoupling",
+      "titleZh": "异步 RL 解耦什么",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Async RL training systems (APPO / AReaL-style) primarily decouple:",
+      "descriptionZh": "异步 RL 训练系统（APPO / AReaL 风格）主要解耦的是：",
+      "options": [
+        "the reward model from the policy",
+        "rollout generation from policy updates — workers keep sampling while the trainer steps, with importance ratios correcting off-policyness",
+        "CPU inference from GPU inference",
+        "training from evaluation checkpoints"
+      ],
+      "explanationEn": "Rollout actors and the trainer run as loosely-coupled loops; weight sync lags behind, and PPO-style clipping with replay windows bounds the resulting staleness.",
+      "explanationZh": "采样 actor 和训练器是松耦合的两个循环；权重同步有滞后，用 PPO 式裁剪加回放窗口把陈旧度压在界内。",
+      "tests": []
+    },
+    {
+      "id": "quiz_deepseek_router",
+      "type": "choice",
+      "title": "Aux-Loss-Free Routing",
+      "titleZh": "无辅助损失路由",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "DeepSeek-V3's aux-loss-free load balancing works by:",
+      "descriptionZh": "DeepSeek-V3 的无辅助损失（aux-loss-free）负载均衡靠的是：",
+      "options": [
+        "adding a KL term between the router distribution and uniform",
+        "adjusting a per-expert bias from expert load and adding it to routing scores for top-k selection only",
+        "randomly dropping overloaded experts each step",
+        "annealing the softmax temperature of the router"
+      ],
+      "explanationEn": "The bias enters only the top-k selection, not the gate probability, so gradients stay clean; a tiny sequence-wise balance loss is kept only as a safeguard.",
+      "explanationZh": "偏置只进 top-k 选择、不进门控概率，因此不污染梯度；只保留一个很小的序列级平衡损失作为保险。",
+      "tests": []
+    },
+    {
+      "id": "quiz_mla_kv",
+      "type": "choice",
+      "title": "MLA KV Cache",
+      "titleZh": "MLA 的 KV 缓存",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "MLA shrinks the KV cache by:",
+      "descriptionZh": "MLA 压缩 KV 缓存的方式是：",
+      "options": [
+        "quantizing keys and values to 4-bit",
+        "caching a compressed joint latent per token and re-deriving K/V from it at attention time",
+        "sharing one KV entry across all layers",
+        "dropping KV for sliding-window layers"
+      ],
+      "explanationEn": "A low-rank joint projection compresses per-head K/V into one latent vector (plus the RoPE-decoupled part); only that is cached, and heads are re-derived when needed.",
+      "explanationZh": "低秩联合投影把逐头的 K/V 压成一个潜在向量（外加与 RoPE 解耦的部分）；只缓存它，需要时再还原各头。",
+      "tests": []
+    },
+    {
+      "id": "quiz_mopd",
+      "type": "choice",
+      "title": "MOPD Meaning",
+      "titleZh": "MOPD 指什么",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "In Xiaomi MiMo-V2.6's post-training, MOPD stands for:",
+      "descriptionZh": "小米 MiMo-V2.6 后训练里的 MOPD 指的是：",
+      "options": [
+        "Mixed-Precision Policy Distillation",
+        "Multi-Prefix Multi-Teacher On-Policy Distillation",
+        "Masked Output Projection Distillation",
+        "Model-Optimized Preference Distillation"
+      ],
+      "explanationEn": "MOPD = Multi-Prefix Multi-Teacher On-Policy Distillation — capability-mixing weights blend several teachers' scores on the student's own rollouts. The exact weighting formula is not public.",
+      "explanationZh": "MOPD = Multi-Prefix Multi-Teacher On-Policy Distillation（多前缀多教师在线策略蒸馏）——用能力组合权重融合多个教师在学生自己 rollout 上的打分；精确加权公式未公开。",
+      "tests": []
+    },
+    {
+      "id": "quiz_mtp_drafter",
+      "type": "choice",
+      "title": "MiMo MTP Drafter",
+      "titleZh": "MiMo 的 MTP 起草器",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "MiMo-V2.6's MTP drafter — a 5-layer sliding-window model — proposes how many tokens per verification step?",
+      "descriptionZh": "MiMo-V2.6 的 MTP 起草器（一个 5 层滑窗模型）每步验证提议几个 token？",
+      "options": [
+        "2",
+        "3",
+        "5",
+        "7"
+      ],
+      "explanationEn": "The drafter proposes 7 tokens per step; accepted prefixes advance the sequence in a single round, amortizing decode cost.",
+      "explanationZh": "起草器每步提议 7 个 token；被接受的前缀让序列一轮前进多步，摊薄解码开销。",
+      "tests": []
+    },
+    {
+      "id": "quiz_muon_k2",
+      "type": "choice",
+      "title": "MuonClip Recipe",
+      "titleZh": "MuonClip 配方",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Kimi K2's pretraining optimizer recipe is:",
+      "descriptionZh": "Kimi K2 的预训练优化器配方是：",
+      "options": [
+        "AdamW with cosine decay and loss-spike rollback",
+        "Muon plus QK-clip (clipping the QK root-mean-square outlier)",
+        "Lion with aggressive weight decay",
+        "Adafactor with ZeRO-3"
+      ],
+      "explanationEn": "MuonClip = Muon + QK-clip; K2 trained 15.5T tokens with zero loss spikes — the first open recipe at that scale to run Muon for the bulk of pretraining.",
+      "explanationZh": "MuonClip = Muon + QK-clip（裁剪 QK 的均方根离群值）；K2 用它训了 15.5T token、零 loss spike——首个在该规模上用 Muon 扛主体的开源配方。",
+      "tests": []
+    },
+    {
+      "id": "quiz_opsd_views",
+      "type": "choice",
+      "title": "OPSD's Two Views",
+      "titleZh": "OPSD 的双视图",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "On-Policy Self-Distillation (OPSD) makes one model both teacher and student by:",
+      "descriptionZh": "在线策略自蒸馏（OPSD）让一个模型同时当教师和学生，其做法是：",
+      "options": [
+        "averaging the weights of two checkpoints each step",
+        "conditioning two views differently — a privileged view sees the question plus a reference, the deployable view sees the question only — and pulling the deployable view toward the privileged one on its own samples",
+        "training the model to predict its own next-layer features",
+        "fine-tuning on self-generated data filtered by a reward model"
+      ],
+      "explanationEn": "The hint-conditioned view provides the target distribution; a stop-gradient KL on the student's own rollouts transfers the capability, and at deployment the hint is simply gone.",
+      "explanationZh": "带提示的视图提供目标分布；在学生自己的 rollout 上做 stop-gradient KL 把能力迁移过去；部署时提示直接消失。",
+      "tests": []
+    },
+    {
+      "id": "quiz_paged_attn",
+      "type": "choice",
+      "title": "PagedAttention Target",
+      "titleZh": "PagedAttention 治什么",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "PagedAttention (vLLM) attacks which bottleneck?",
+      "descriptionZh": "PagedAttention（vLLM）解决的是哪个瓶颈？",
+      "options": [
+        "attention FLOPs",
+        "KV-cache fragmentation — cache blocks live in fixed-size pages like OS virtual memory",
+        "token embedding lookup latency",
+        "weight sharding across GPUs"
+      ],
+      "explanationEn": "Fixed-size pages plus a block table eliminate internal and external fragmentation of the per-sequence KV cache, and enable copy-on-write prefix sharing.",
+      "explanationZh": "定长页 + 块表消除了逐序列 KV 缓存的内部与外部碎片，还顺带支持写时复制的前缀共享。",
+      "tests": []
+    },
+    {
+      "id": "quiz_prefill_decode",
+      "type": "choice",
+      "title": "Prefill/Decode Split",
+      "titleZh": "预填充/解码分离",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Disaggregating prefill and decode into separate serving pools pays off because:",
+      "descriptionZh": "把预填充（prefill）和解码（decode）拆到不同服务池划算的原因是：",
+      "options": [
+        "prefill is compute-bound while decode is memory-bandwidth-bound",
+        "prefill requires lower precision than decode",
+        "decode cannot run on the same GPUs as prefill",
+        "prefill outputs tokens while decode processes prompts"
+      ],
+      "explanationEn": "Prefill saturates FLOPs with large matmuls over the prompt; decode emits one token at a time and is bound by KV-cache reads — different bottlenecks want different pool sizes and hardware.",
+      "explanationZh": "预填充是算力型（整段提示的大矩阵乘）；解码一次吐一个 token、受 KV 缓存读取带宽限制——瓶颈不同，池子的规模和硬件配比也不同。",
+      "tests": []
+    },
+    {
+      "id": "quiz_reverse_kl",
+      "type": "choice",
+      "title": "Reverse KL Shape",
+      "titleZh": "反向 KL 的形态",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Compared with forward KL, reverse KL D_KL(student || teacher) is:",
+      "descriptionZh": "与前向 KL 相比，反向 KL D_KL(student ‖ teacher) 的特点是：",
+      "options": [
+        "mass-covering — the student spreads over all teacher modes",
+        "mode-seeking — the student concentrates where the teacher is confident and may drop modes",
+        "symmetric to forward KL up to temperature",
+        "always larger in magnitude"
+      ],
+      "explanationEn": "Reverse KL explodes where the teacher has near-zero mass, so the student avoids those regions and concentrates on the teacher's dominant modes — the asymmetry on-policy distillation exploits.",
+      "explanationZh": "反向 KL 在教师概率近零处会爆炸，学生会避开这些区域、集中在教师的主模式上——在线策略蒸馏正是利用了这个不对称性。",
+      "tests": []
+    },
+    {
+      "id": "quiz_shared_experts",
+      "type": "choice",
+      "title": "Shared Experts in 2026",
+      "titleZh": "2026 旗舰的共享专家",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Among 2025-2026 open-weight flagships, which statement about shared experts is TRUE?",
+      "descriptionZh": "关于 2025-2026 开源旗舰的共享专家（shared expert），哪句是对的？",
+      "options": [
+        "Qwen3-MoE layers carry one shared expert each",
+        "MiMo-V2.6 ships 2 shared experts per MoE layer",
+        "Kimi K3 ships no shared experts",
+        "MiMo-V2.6 ships none, while Kimi K3 keeps two"
+      ],
+      "explanationEn": "MiMo-V2.6: 384 routed experts, top-8, zero shared. Qwen3-MoE also ships without shared experts; DeepSeek-V3 keeps 1; Kimi K3 keeps 2. Shared experts are a design axis, not a constant.",
+      "explanationZh": "MiMo-V2.6：384 个路由专家、top-8、无共享专家。Qwen3-MoE 同样没有共享专家；DeepSeek-V3 保留 1 个；Kimi K3 保留 2 个。共享专家是一个设计轴，不是常数。",
+      "tests": []
+    },
+    {
+      "id": "quiz_zero_stages",
+      "type": "choice",
+      "title": "ZeRO Stage 3",
+      "titleZh": "ZeRO 第 3 级",
+      "difficulty": "Medium",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Compared with ZeRO stage 1, stage 3 additionally shards:",
+      "descriptionZh": "相比 ZeRO 第 1 级，第 3 级额外切分了：",
+      "options": [
+        "activations",
+        "gradients and model parameters",
+        "optimizer states only",
+        "the dataset"
+      ],
+      "explanationEn": "Stage 1 shards optimizer states; stage 2 adds gradients; stage 3 adds parameters — full sharding with per-layer all-gather in forward and backward.",
+      "explanationZh": "第 1 级切优化器状态；第 2 级加梯度；第 3 级加模型参数——全切分，前向/反向按层 all-gather。",
+      "tests": []
+    },
+    {
+      "id": "quiz_kda_layers",
+      "type": "choice",
+      "title": "Kimi K3 Layer Mix",
+      "titleZh": "Kimi K3 的层混合",
+      "difficulty": "Hard",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Kimi K3 (2.8T total / 104B activated) mixes two attention families across its 93 layers. Which combination?",
+      "descriptionZh": "Kimi K3（总参 2.8T / 激活 104B）在 93 层里混用了两种注意力家族，是哪种组合？",
+      "options": [
+        "24 delta-rule (KDA) layers + 69 gated MLA layers",
+        "69 delta-rule (KDA) layers + 24 gated MLA layers",
+        "All gated MLA layers + 1 dense layer",
+        "All sliding-window layers + full attention"
+      ],
+      "explanationEn": "K3 runs 69 KDA (Kimi Delta Attention, a delta-rule linear attention) + 24 gated MLA + 1 dense layer = 93; the 1M context rides on this hybrid.",
+      "explanationZh": "K3 = 69 层 KDA（Kimi Delta Attention，delta 规则线性注意力）+ 24 层门控 MLA + 1 层稠密 = 93 层；1M 上下文正是靠这套混合栈撑起来的。",
+      "tests": []
+    },
+    {
+      "id": "quiz_mimo_gqa",
+      "type": "choice",
+      "title": "MiMo GQA Ratio",
+      "titleZh": "MiMo 的 GQA 配比",
+      "difficulty": "Hard",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "Xiaomi MiMo-V2.6-Pro pairs 128 query heads with how many KV heads?",
+      "descriptionZh": "小米 MiMo-V2.6-Pro 用 128 个 query 头配了多少个 KV 头？",
+      "options": [
+        "128",
+        "32",
+        "8",
+        "1 (MQA)"
+      ],
+      "explanationEn": "128 query heads to 8 KV heads — an aggressive GQA ratio; the stack also runs 60 sliding-window layers to 10 global ones.",
+      "explanationZh": "128 个 query 头对 8 个 KV 头——非常激进的 GQA 配比；整栈还有 60 层滑窗注意力对 10 层全局注意力。",
+      "tests": []
+    },
+    {
+      "id": "quiz_qwen_vocab",
+      "type": "choice",
+      "title": "Qwen3.5/3.8 Vocab",
+      "titleZh": "Qwen3.5/3.8 词表",
+      "difficulty": "Hard",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "The 2026-generation Qwen3.5/Qwen3.8 models enlarged the tokenizer vocabulary to roughly:",
+      "descriptionZh": "2026 代的 Qwen3.5/Qwen3.8 把分词器词表扩大到了大约：",
+      "options": [
+        "~130K",
+        "~152K",
+        "~248K",
+        "~400K"
+      ],
+      "explanationEn": "Qwen3.5-4B and Qwen3.8-27B share a 248,320-entry vocabulary, up from ~152K in the Qwen2/3 era — shorter sequences for CJK and code.",
+      "explanationZh": "Qwen3.5-4B 与 Qwen3.8-27B 共用 248,320 的词表，比 Qwen2/3 时代的 ~152K 大幅扩容——中文与代码的序列更短。",
+      "tests": []
+    },
+    {
+      "id": "quiz_stale_rollouts",
+      "type": "choice",
+      "title": "Stale Sample Correction",
+      "titleZh": "陈旧样本的修正",
+      "difficulty": "Hard",
+      "functionName": "",
+      "hint": "",
+      "hintZh": "",
+      "descriptionEn": "In async RL, rollouts sampled under older policy versions are typically corrected by:",
+      "descriptionZh": "异步 RL 里，用旧版策略采出来的 rollout 通常靠什么修正？",
+      "options": [
+        "discarding any sample older than one update",
+        "importance-sampling ratios between the current and sampling policies, with clipping bounding the correction",
+        "restarting the rollout workers on every update",
+        "doubling the learning rate on fresh samples"
+      ],
+      "explanationEn": "The ratio of current over sampling policy reweights old samples; PPO-style clipping caps the per-token correction — and the ratio magnitude itself is the staleness signal.",
+      "explanationZh": "用当前策略与采样策略的概率比给旧样本重加权；PPO 式裁剪封顶逐 token 修正量——比值的大小本身就是陈旧度信号。",
+      "tests": []
     }
   ]
 }

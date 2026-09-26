@@ -14,6 +14,7 @@ import { AIHelpTab } from '@/components/workspace/AIHelpTab';
 import { CodeEditor } from '@/components/workspace/CodeEditor';
 import { TestPanel } from '@/components/workspace/TestPanel';
 import { ActionBar } from '@/components/workspace/ActionBar';
+import { ChoicePanel } from '@/components/workspace/ChoicePanel';
 import { useProblemStore } from '@/store/problemStore';
 import { useLocale } from '@/context/LocaleContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -59,10 +60,12 @@ function WorkspacePageNew() {
   const [progress, setProgress] = useState<ProgressMap>({});
   const [pathData, setPathData] = useState<(Omit<LearningPath, 'problems'> & { problems: LearningPathProblemSummary[] }) | null>(null);
   const [feedbackResult, setFeedbackResult] = useState<SubmissionResult | null>(null);
+  const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
   const codeReadyRef = useRef(false);
 
   useEffect(() => {
     codeReadyRef.current = false;
+    setSelectedChoice(null);
     fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/problems/${id}`)
       .then((r) => r.json())
       .then((data) => {
@@ -144,7 +147,7 @@ function WorkspacePageNew() {
   }, [id, currentCode]);
 
   const handleRun = async () => {
-    if (!problem || isRunning) return;
+    if (!problem || isRunning || problem.type === 'choice') return;
     setIsRunning(true);
     setRunResult(null);
     try {
@@ -166,13 +169,20 @@ function WorkspacePageNew() {
 
   const handleSubmit = async () => {
     if (!problem || isSubmitting) return;
+    if (problem.type === 'choice') {
+      if (selectedChoice === null) return;
+    }
     setIsSubmitting(true);
     setSubmissionResult(null);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: id, code: currentCode }),
+        body: JSON.stringify(
+          problem.type === 'choice'
+            ? { taskId: id, code: '', choice: selectedChoice }
+            : { taskId: id, code: currentCode }
+        ),
       });
       const data: SubmissionResult = await res.json();
       setSubmissionResult(data);
@@ -228,7 +238,10 @@ function WorkspacePageNew() {
           style={{ borderBottom: '1px solid var(--line)', background: 'var(--bg)' }}
         >
           <Tabs.List className="flex gap-0.5">
-            {(['description', 'solution', 'aiHelp'] as const).map((tab) => (
+            {(problem.type === 'choice'
+              ? (['description', 'aiHelp'] as const)
+              : (['description', 'solution', 'aiHelp'] as const)
+            ).map((tab) => (
               <Tabs.Trigger
                 key={tab}
                 value={tab}
@@ -253,8 +266,24 @@ function WorkspacePageNew() {
     </div>
   );
 
+  const isChoice = problem.type === 'choice';
+
   const rightPanel = (
     <div className="h-full flex flex-col">
+      {isChoice ? (
+        <ChoicePanel
+          problem={problem}
+          selected={selectedChoice}
+          onSelect={setSelectedChoice}
+          onSubmit={handleSubmit}
+          onRetry={() => {
+            setSubmissionResult(null);
+            setSelectedChoice(null);
+          }}
+          isSubmitting={isSubmitting}
+          result={submissionResult}
+        />
+      ) : (
       <VerticalSplitPane
         top={
           <div className="flex flex-col h-full">
@@ -293,6 +322,7 @@ function WorkspacePageNew() {
         minTop={200}
         minBottom={150}
       />
+      )}
     </div>
   );
 

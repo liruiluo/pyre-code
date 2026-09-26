@@ -28,17 +28,54 @@ REQUIRED_TASK_KEYS = (
     "tests",
 )
 
+REQUIRED_CHOICE_KEYS = (
+    "title",
+    "title_zh",
+    "difficulty",
+    "question_en",
+    "question_zh",
+    "options",
+    "answer",
+    "explanation_en",
+    "explanation_zh",
+)
+
 
 def _validate_task(task_id: str, task: dict[str, Any]) -> None:
-    missing = [key for key in REQUIRED_TASK_KEYS if key not in task]
+    required = REQUIRED_CHOICE_KEYS if task.get("type") == "choice" else REQUIRED_TASK_KEYS
+    missing = [key for key in required if key not in task]
     if missing:
         raise ValueError(f"Task '{task_id}' is missing required keys: {', '.join(missing)}")
+    if task.get("type") == "choice":
+        options = task["options"]
+        if not isinstance(options, list) or len(options) < 2:
+            raise ValueError(f"Choice task '{task_id}' needs at least 2 options")
+        if not (0 <= task["answer"] < len(options)):
+            raise ValueError(f"Choice task '{task_id}' answer index out of range")
 
 
 def _problem_entry(task_id: str, task: dict[str, Any]) -> dict[str, Any]:
     _validate_task(task_id, task)
-    return {
+    if task.get("type") == "choice":
+        return {
+            "id": task_id,
+            "type": "choice",
+            "title": task["title"],
+            "titleZh": task["title_zh"],
+            "difficulty": task["difficulty"],
+            "functionName": "",
+            "hint": "",
+            "hintZh": "",
+            "descriptionEn": task["question_en"],
+            "descriptionZh": task["question_zh"],
+            "options": task["options"],
+            "explanationEn": task["explanation_en"],
+            "explanationZh": task["explanation_zh"],
+            "tests": [],
+        }
+    entry = {
         "id": task_id,
+        "type": "code",
         "title": task["title"],
         "titleZh": task["title_zh"],
         "difficulty": task["difficulty"],
@@ -49,6 +86,7 @@ def _problem_entry(task_id: str, task: dict[str, Any]) -> dict[str, Any]:
         "descriptionZh": task["description_zh"],
         "tests": task["tests"],
     }
+    return entry
 
 
 def _load_existing_order(output_path: Path) -> list[str]:

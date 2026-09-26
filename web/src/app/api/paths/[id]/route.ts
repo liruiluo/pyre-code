@@ -32,13 +32,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const problems = path.problems.map((problemId) => {
-    const problem = (problemsData as { problems: Array<{ id: string; title: string; titleZh: string; difficulty: string }> }).problems.find((p) => p.id === problemId);
+    const problem = (problemsData as { problems: Array<{ id: string; title: string; titleZh: string; difficulty: string; type?: string }> }).problems.find((p) => p.id === problemId);
     return {
       id: problemId,
       title: problem?.title ?? problemId,
       titleZh: problem?.titleZh ?? problemId,
       difficulty: (problem?.difficulty ?? 'Easy') as 'Easy' | 'Medium' | 'Hard',
       status: (progressMap[problemId]?.status ?? 'todo') as 'todo' | 'attempted' | 'solved',
+      type: problem?.type ?? 'code',
     };
   });
 

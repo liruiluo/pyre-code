@@ -54,7 +54,9 @@ def test_solutions_json_has_all_tasks():
     from torch_judge.tasks import TASKS
 
     data = json.loads(SOLUTIONS_JSON.read_text())
-    assert len(data) == len(TASKS)
+    solvable = {tid for tid, task in TASKS.items() if "solution" in task}
+    assert set(data) == solvable
+    assert len(data) == len(solvable)
 
 
 @pytest.mark.skipif(not SOLUTIONS_JSON.exists(), reason="solutions.json not generated yet")

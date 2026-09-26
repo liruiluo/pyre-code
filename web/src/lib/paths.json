@@ -228,6 +228,44 @@
         "tied_lm_logits"
       ],
       "prerequisites": []
+    },
+    {
+      "id": "llm-knowledge-quiz",
+      "titleEn": "LLM Knowledge Quiz",
+      "titleZh": "大模型知识自测",
+      "descriptionEn": "Multiple-choice speed-run over the facts that matter in 2026: which base-model family uses which position encoding, attention mix, expert layout, tokenizer, and optimizer; how post-training actually works (OPD, OPSD, MOPD, GRPO, DPO); and the infra and async systems underneath (FlashAttention, PagedAttention, ZeRO, expert parallelism, async RL, continuous batching).",
+      "descriptionZh": "用选择题速刷 2026 年该知道的事实：各开源基模家族的位置编码、注意力混合、专家布局、分词器与优化器分别是什么；后训练到底怎么运作（OPD、OPSD、MOPD、GRPO、DPO）；以及底下的 infra 与异步系统（FlashAttention、PagedAttention、ZeRO、专家并行、异步 RL、连续批处理）。",
+      "icon": "CircleHelp",
+      "problems": [
+        "quiz_mla_pioneer",
+        "quiz_partial_rope",
+        "quiz_qk_norm",
+        "quiz_shared_experts",
+        "quiz_1m_context",
+        "quiz_mimo_gqa",
+        "quiz_mtp_drafter",
+        "quiz_kda_layers",
+        "quiz_muon_k2",
+        "quiz_qwen_vocab",
+        "quiz_deepseek_router",
+        "quiz_opd_property",
+        "quiz_reverse_kl",
+        "quiz_opsd_views",
+        "quiz_grpo_baseline",
+        "quiz_dpo",
+        "quiz_mopd",
+        "quiz_flash_attn",
+        "quiz_paged_attn",
+        "quiz_mla_kv",
+        "quiz_tp_pp_ep",
+        "quiz_zero_stages",
+        "quiz_grad_ckpt",
+        "quiz_async_rl",
+        "quiz_continuous_batching",
+        "quiz_prefill_decode",
+        "quiz_stale_rollouts"
+      ],
+      "prerequisites": []
     }
   ]
 }

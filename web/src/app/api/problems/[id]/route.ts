@@ -12,6 +12,9 @@ export async function GET(
     return NextResponse.json({ error: 'Problem not found' }, { status: 404 });
   }
   const startersMap = starters as Record<string, string>;
+  if ((problem as { type?: string }).type === 'choice') {
+    return NextResponse.json({ ...problem, starterCode: '' });
+  }
   const body = startersMap[id] || `def ${problem.functionName}(...):\n    pass`;
   const header = `import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nimport numpy as np\n\n`;
   return NextResponse.json({ ...problem, starterCode: header + body });

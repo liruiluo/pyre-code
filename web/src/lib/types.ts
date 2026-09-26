@@ -7,6 +7,7 @@ export interface Test {
 
 export interface Problem {
   id: string;
+  type?: 'code' | 'choice';
   title: string;
   titleZh: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
@@ -16,6 +17,9 @@ export interface Problem {
   descriptionEn: string;
   descriptionZh: string;
   tests: Test[];
+  options?: string[];
+  explanationEn?: string;
+  explanationZh?: string;
 }
 
 export interface TestResult {
@@ -27,6 +31,7 @@ export interface TestResult {
 }
 
 export interface SubmissionResult {
+  answerIndex?: number | null;
   passed: number;
   total: number;
   allPassed: boolean;

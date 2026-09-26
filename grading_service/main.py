@@ -74,12 +74,14 @@ def _get_db() -> sqlite3.Connection:
 class SubmitRequest(BaseModel):
     taskId: str
     code: str
+    choice: int | None = None
 
 
 class RunRequest(BaseModel):
     taskId: str
     code: str
     testIndices: list[int] | None = None
+    choice: int | None = None
 
 
 class TestResult(BaseModel):
@@ -97,6 +99,7 @@ class GradeResponse(BaseModel):
     results: list[TestResult]
     totalTimeMs: float
     error: str | None = None
+    answerIndex: int | None = None
 
 
 def _validate_code(code: str) -> str | None:
@@ -211,11 +214,36 @@ def _execute_tests(code: str, task: dict, test_indices: list[int] | None = None,
     return GradeResponse(passed=passed, total=len(results), allPassed=passed == len(results), results=results, totalTimeMs=total_time_ms)
 
 
+def _grade_choice(choice: int | None, task: dict) -> GradeResponse:
+    """Grade a multiple-choice submission without executing any code."""
+    options = task.get("options", [])
+    if choice is None:
+        return GradeResponse(
+            passed=0, total=0, allPassed=False, results=[], totalTimeMs=0.0,
+            error="No answer selected",
+        )
+    if not (0 <= choice < len(options)):
+        return GradeResponse(
+            passed=0, total=0, allPassed=False, results=[], totalTimeMs=0.0,
+            error=f"Invalid choice index: {choice}",
+        )
+    correct = choice == task["answer"]
+    result = TestResult(
+        name=f"Answer {chr(ord('A') + choice)}",
+        passed=correct,
+        execTimeMs=0.0,
+        error=None if correct else "Incorrect — review the explanation and try again.",
+    )
+    return GradeResponse(passed=1 if correct else 0, total=1, allPassed=correct, results=[result], totalTimeMs=0.0, answerIndex=task["answer"])
+
+
 @app.post("/grade", response_model=GradeResponse)
 def grade(request: SubmitRequest) -> GradeResponse:
     task = get_task(request.taskId)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task '{request.taskId}' not found")
+    if task.get("type") == "choice":
+        return _grade_choice(request.choice, task)
     return _execute_tests(request.code, task)
 
 

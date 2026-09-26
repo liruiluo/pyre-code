@@ -73,14 +73,16 @@ export function DescriptionTab({ problem }: DescriptionTabProps) {
             {problem.difficulty.toUpperCase()}
           </Badge>
         </div>
-        <p className="text-sm text-text-2">{t('implementFn', { fn: problem.functionName })}</p>
+        {problem.type !== 'choice' && (
+          <p className="text-sm text-text-2">{t('implementFn', { fn: problem.functionName })}</p>
+        )}
       </div>
 
       {description && (
         <div className="space-y-1">{renderDescription(description)}</div>
       )}
 
-      {hint && (
+      {hint && problem.type !== 'choice' && (
         <div>
           <button
             onClick={() => setHintOpen(!hintOpen)}

@@ -25,7 +25,7 @@ const notoSC = Noto_Sans_SC({
 
 export const metadata: Metadata = {
   title: "Pyre Code",
-  description: "109 hands-on AI systems challenges — implement the internals of attention, agents, RLHF, distillation, MoE architectures, and distributed training",
+  description: "136 hands-on AI systems challenges — implement the internals of attention, agents, RLHF, distillation, MoE architectures, and distributed training",
 };
 
 export default function RootLayout({
