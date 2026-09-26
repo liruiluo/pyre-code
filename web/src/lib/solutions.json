@@ -143,6 +143,20 @@
       }
     ]
   },
+  "kd_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef kd_loss(student_logits, teacher_logits, temperature=2.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    q = F.softmax(teacher_logits / temperature, dim=-1)\n    kl = F.kl_div(log_p, q, reduction=\"batchmean\")\n    return kl * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nteacher = torch.randn(2, 8)\nstudent = teacher + 0.3 * torch.randn(2, 8)\nprint('T=1 :', kd_loss(student, teacher, temperature=1.0).item())\nprint('T=4 :', kd_loss(student, teacher, temperature=4.0).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "label_smoothing": {
     "cells": [
       {
@@ -167,6 +181,20 @@
       {
         "type": "code",
         "source": "pe = LearnablePositionEncoding(max_len=16, d_model=8)\nx = torch.zeros(2, 5, 8)\nprint(pe.forward(x).shape)",
+        "role": "demo"
+      }
+    ]
+  },
+  "logit_softcap": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef logit_softcap(logits, cap):\n    return cap * torch.tanh(logits / cap)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\nx = torch.tensor([0.5, 5.0, 30.0, 60.0, 200.0])\nprint('in :', x.tolist())\nprint('out:', logit_softcap(x, 30.0).tolist())",
         "role": "demo"
       }
     ]
@@ -223,6 +251,20 @@
       {
         "type": "code",
         "source": "B, S, D = 1, 8, 16\nq = torch.randn(B, S, D)\nk = torch.randn(B, S, D)\n\nq1, k1 = ntk_rope(q, k, scale=1.0)\nq4, k4 = ntk_rope(q, k, scale=4.0)\n\nprint(\"scale=1 base:\", 10000.0 * (1.0 ** (D / (D - 2))))\nprint(\"scale=4 base:\", 10000.0 * (4.0 ** (D / (D - 2))))\nprint()\nprint(\"Norm preservation (scale=1):\")\nprint(\"  q input norm:\", q.norm(dim=-1).mean().item())\nprint(\"  q output norm:\", q1.norm(dim=-1).mean().item())\nprint()\nprint(\"Norm preservation (scale=4):\")\nprint(\"  q input norm:\", q.norm(dim=-1).mean().item())\nprint(\"  q output norm:\", q4.norm(dim=-1).mean().item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "react_agent_step": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def parse_react_trace(text):\n    keys = (\"thought\", \"action\", \"action_input\", \"observation\")\n    template = {k: None for k in keys}\n    steps = []\n    current = dict(template)\n\n    def flush():\n        nonlocal current\n        if any(v is not None for v in current.values()):\n            steps.append(current)\n        current = dict(template)\n\n    for line in text.splitlines():\n        stripped = line.strip()\n        if stripped.startswith(\"Thought:\"):\n            flush()\n            current = dict(template)\n            current[\"thought\"] = stripped[len(\"Thought:\"):].strip()\n        elif stripped.startswith(\"Action Input:\"):\n            current[\"action_input\"] = stripped[len(\"Action Input:\"):].strip()\n        elif stripped.startswith(\"Action:\"):\n            current[\"action\"] = stripped[len(\"Action:\"):].strip()\n        elif stripped.startswith(\"Observation:\"):\n            current[\"observation\"] = stripped[len(\"Observation:\"):].strip()\n        # blank / unmarked lines are ignored\n\n    flush()\n    return steps",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "text = '''Thought: I should check the weather.\nAction: get_weather\nAction Input: Beijing\n\nObservation: 22C, sunny\n\nThought: Now I can answer.\nAction: finish\nAction Input: It is 22C and sunny.'''\nfor i, step in enumerate(parse_react_trace(text), 1):\n    print(f\"Step {i}: {step}\")",
         "role": "demo"
       }
     ]
@@ -297,6 +339,20 @@
       }
     ]
   },
+  "tied_lm_logits": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef tied_lm_logits(hidden, embedding_weight, scale=1.0):\n    return F.linear(hidden, embedding_weight) * scale",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nE = torch.randn(50, 8)              # shared embedding (V=50, d=8)\nhidden = torch.randn(1, 6, 8)       # final layer states\nlogits = tied_lm_logits(hidden, E, scale=1.0 / 8 ** 0.5)\nprint('logits shape:', tuple(logits.shape))\nprint('param blocks: 1 (embedding serves input AND output)')",
+        "role": "demo"
+      }
+    ]
+  },
   "weight_init": {
     "cells": [
       {
@@ -367,6 +423,34 @@
       }
     ]
   },
+  "agent_loss_mask": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef build_agent_loss_mask(segments, trainable_roles=None):\n    if trainable_roles is None:\n        trainable_roles = [\"assistant\"]\n    trainable = set(trainable_roles)\n    pieces = []\n    for seg in segments:\n        n = int(seg[\"tokens\"])\n        if seg[\"role\"] in trainable:\n            pieces.append(torch.ones(n, dtype=torch.bool))\n        else:\n            pieces.append(torch.zeros(n, dtype=torch.bool))\n    if not pieces:\n        return torch.zeros(0, dtype=torch.bool)\n    return torch.cat(pieces)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "segments = [\n    {'role': 'system', 'tokens': 5},\n    {'role': 'user', 'tokens': 4},\n    {'role': 'assistant', 'tokens': 6},\n    {'role': 'tool', 'tokens': 3},\n]\nmask = build_agent_loss_mask(segments)\nprint(mask.int().tolist())",
+        "role": "demo"
+      }
+    ]
+  },
+  "agent_memory_bank": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef score_memory(query, memories, timestamps, current_time, decay_rate, topk):\n    if topk is None or topk <= 0 or memories.numel() == 0 or memories.shape[0] == 0:\n        return []\n    relevance = F.cosine_similarity(query.unsqueeze(0), memories, dim=1)\n    recency = torch.exp(-decay_rate * (current_time - timestamps))\n    scores = relevance * recency\n    order = torch.argsort(scores, descending=True, stable=True)\n    k = min(int(topk), memories.shape[0])\n    return order[:k].tolist()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\nquery = torch.tensor([1.0, 0.0])\nmemories = torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.9, 0.1]])\ntimestamps = torch.tensor([0.0, 1.0, 9.0])\nprint(score_memory(query, memories, timestamps, current_time=10.0, decay_rate=0.2, topk=2))",
+        "role": "demo"
+      }
+    ]
+  },
   "alibi": {
     "cells": [
       {
@@ -433,6 +517,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(0)\nlogits = torch.randn(2, 5, 10)\nlabels = torch.randint(0, 10, (2, 5))\nprint('LM loss:', causal_lm_loss(logits, labels).item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "context_truncation": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def truncate_context(messages, max_tokens):\n    pinned = [i for i, m in enumerate(messages) if m.get(\"pinned\", False)]\n    non_pinned = [i for i, m in enumerate(messages) if not m.get(\"pinned\", False)]\n\n    total = sum(messages[i][\"tokens\"] for i in pinned)\n    kept = set(pinned)\n    for i in reversed(non_pinned):\n        cost = messages[i][\"tokens\"]\n        if total + cost <= max_tokens:\n            kept.add(i)\n            total += cost\n    return sorted(kept)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "messages = [\n    {'role': 'system', 'tokens': 10, 'pinned': True},\n    {'role': 'user', 'tokens': 40},\n    {'role': 'assistant', 'tokens': 40},\n    {'role': 'tool', 'tokens': 15, 'pinned': True},\n    {'role': 'user', 'tokens': 30},\n]\nprint('kept indices:', truncate_context(messages, max_tokens=100))",
         "role": "demo"
       }
     ]
@@ -592,6 +690,34 @@
         "type": "code",
         "source": "def gin_layer(A, X, eps, W1, b1, W2, b2):\n    agg = A @ X\n    h = (1 + eps) * X + agg\n    h = torch.relu(h @ W1 + b1)\n    return h @ W2 + b2",
         "role": "solution"
+      }
+    ]
+  },
+  "hidden_distillation": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef hidden_distillation(student_hidden, teacher_hidden, projection):\n    diff = projection(student_hidden) - teacher_hidden.detach()\n    return diff.pow(2).mean()",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn as nn\ntorch.manual_seed(0)\nstudent = torch.randn(2, 6, 16)\nteacher = torch.randn(2, 6, 32)\nproj = nn.Linear(16, 32)\nprint('loss:', hidden_distillation(student, teacher, proj).item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "json_schema_validation": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import json\n\n_TYPE_NAMES = (dict, \"object\"), (list, \"array\"), (str, \"string\"), (bool, \"boolean\"), (int, \"integer\"), (float, \"number\"), (type(None), \"null\")\n\n\ndef _actual_type(value):\n    # bool must be tested before int: isinstance(True, int) is True\n    for py, name in _TYPE_NAMES:\n        if isinstance(value, py) and not (py is int and isinstance(value, bool)):\n            if py is int and isinstance(value, bool):\n                continue\n            return name\n    return \"null\"\n\n\ndef _matches(value, expected):\n    a = _actual_type(value)\n    if a == expected:\n        return True\n    if expected == \"number\" and a == \"integer\":\n        return True\n    return False\n\n\ndef validate_tool_arguments(args, schema):\n    errors = []\n\n    def walk(value, sub, path):\n        expected = sub.get(\"type\")\n        if expected is not None and not _matches(value, expected):\n            errors.append(f\"{path} must be of type {expected}, got {_actual_type(value)}\")\n            return\n        if \"enum\" in sub and value not in sub[\"enum\"]:\n            errors.append(f\"{path} must be one of {json.dumps(sub['enum'])}\")\n            return\n        actual = _actual_type(value)\n        if actual == \"object\":\n            for key in sub.get(\"required\", []):\n                if key not in value:\n                    errors.append(f\"{path} is missing required property '{key}'\")\n            for key, prop in sub.get(\"properties\", {}).items():\n                if key in value:\n                    walk(value[key], prop, f\"{path}.{key}\")\n        elif actual == \"array\" and \"items\" in sub:\n            for i, item in enumerate(value):\n                walk(item, sub[\"items\"], f\"{path}[{i}]\")\n\n    walk(args, schema, \"$\")\n    return errors",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "schema = {\n    'type': 'object',\n    'properties': {\n        'city': {'type': 'string'},\n        'days': {'type': 'integer'},\n        'unit': {'enum': ['celsius', 'fahrenheit']},\n    },\n    'required': ['city', 'unit'],\n}\nfor args in ({'city': 'Beijing', 'unit': 'celsius'}, {'days': True, 'unit': 'kelvin'}):\n    print(args, '->', validate_tool_arguments(args, schema))",
+        "role": "demo"
       }
     ]
   },
@@ -786,6 +912,20 @@
       }
     ]
   },
+  "prefix_kv_reuse": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "def compute_prefill_plan(prev_messages, new_messages):\n    cached = 0\n    for old, cur in zip(prev_messages, new_messages):\n        if old[\"role\"] != cur[\"role\"] or old[\"content\"] != cur[\"content\"]:\n            break\n        cached += cur[\"tokens\"]\n    total = sum(m[\"tokens\"] for m in new_messages)\n    return {\"cached_tokens\": cached, \"prefill_tokens\": total - cached}",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "prev = [\n    {'role': 'system', 'content': 'You are helpful.', 'tokens': 10},\n    {'role': 'user', 'content': 'Book a flight.', 'tokens': 6},\n]\nnew = prev + [\n    {'role': 'tool', 'content': 'flight list', 'tokens': 20},\n    {'role': 'assistant', 'content': 'Which one?', 'tokens': 5},\n]\nprint(compute_prefill_plan(prev, new))",
+        "role": "demo"
+      }
+    ]
+  },
   "prenorm_postnorm": {
     "cells": [
       {
@@ -800,6 +940,20 @@
       }
     ]
   },
+  "qk_norm": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef _rms_norm(x, weight, bias, eps=1e-6):\n    rms = torch.sqrt(x.pow(2).mean(dim=-1, keepdim=True) + eps)\n    return x / rms * weight + bias\n\n\ndef qk_norm(q, k, weight_q, bias_q, weight_k, bias_k):\n    return _rms_norm(q, weight_q, bias_q), _rms_norm(k, weight_k, bias_k)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nq = torch.randn(1, 2, 3, 8) * 5.0   # badly scaled queries\nk = torch.randn(1, 2, 3, 8)\nw = torch.ones(8); b = torch.zeros(8)\nq_out, k_out = qk_norm(q, k, w, b, w, b)\nprint('before RMS:', q.pow(2).mean(-1).sqrt()[0, 0].tolist())\nprint('after  RMS:', q_out.pow(2).mean(-1).sqrt()[0, 0].tolist())",
+        "role": "demo"
+      }
+    ]
+  },
   "reinforce_loss": {
     "cells": [
       {
@@ -810,6 +964,20 @@
       {
         "type": "code",
         "source": "logps = torch.tensor([-0.2, -1.0, -0.5])\nreturns = torch.tensor([1.0, 0.5, -0.2])\nprint('REINFORCE loss:', reinforce_loss(logps, returns).item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "reverse_kl_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef reverse_kl_loss(student_logits, teacher_logits, temperature=1.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    kl = (p * (log_p - log_t)).sum(dim=-1).mean()\n    return kl * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nteacher = torch.randn(2, 8)\nstudent = teacher + 0.4 * torch.randn(2, 8)\nprint('reverse KL:', reverse_kl_loss(student, teacher, temperature=2.0).item())",
         "role": "demo"
       }
     ]
@@ -884,6 +1052,20 @@
       }
     ]
   },
+  "sigmoid_moe_routing": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef sigmoid_moe_routing(hidden_states, router_weight, top_k):\n    scores = torch.sigmoid(hidden_states @ router_weight.T)\n    vals, idx = scores.topk(top_k, dim=-1)\n    weights = vals / vals.sum(dim=-1, keepdim=True)\n    return weights, idx",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nx = torch.randn(4, 8)\nW = torch.randn(6, 8)\nweights, indices = sigmoid_moe_routing(x, W, top_k=2)\nprint('indices:\\n', indices)\nprint('weights:\\n', weights)",
+        "role": "demo"
+      }
+    ]
+  },
   "sliding_window": {
     "cells": [
       {
@@ -926,6 +1108,34 @@
       }
     ]
   },
+  "tool_call_parsing": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import json\nimport re\n\n\ndef parse_tool_calls(text):\n    calls = []\n    for body in re.findall(r\"<tool_call>\\n(.*?)</tool_call>\", text, re.DOTALL):\n        try:\n            obj = json.loads(body)\n        except (json.JSONDecodeError, ValueError):\n            continue\n        if not isinstance(obj, dict):\n            continue\n        name = obj.get(\"name\")\n        arguments = obj.get(\"arguments\", {})\n        if not isinstance(name, str) or not isinstance(arguments, dict):\n            continue\n        calls.append({\"name\": name, \"arguments\": arguments})\n    return calls",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "text = ('Let me check the weather and the news.\\n\\n'\n        '<tool_call>\\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Beijing\"}}\\n</tool_call>\\n'\n        '<tool_call>\\n{\"name\": \"get_news\", \"arguments\": {\"topic\": \"AI\"}}\\n</tool_call>')\nfor call in parse_tool_calls(text):\n    print(call)",
+        "role": "demo"
+      }
+    ]
+  },
+  "topk_kd_loss": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0):\n    b, v = teacher_logits.shape\n    k = min(int(k), v)\n    vals, idx = teacher_logits.topk(k, dim=-1)\n    s_top = student_logits.gather(-1, idx)\n    log_p = F.log_softmax(s_top / temperature, dim=-1)\n    q = F.softmax(vals / temperature, dim=-1)\n    kl = F.kl_div(log_p, q, reduction=\"batchmean\")\n    return kl * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nteacher = torch.randn(2, 12)\nstudent = teacher + 0.5 * torch.randn(2, 12)\nfor k in (1, 3, 12):\n    print(f'k={k:2d}:', topk_kd_loss(student, teacher, k).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "topk_sampling": {
     "cells": [
       {
@@ -964,6 +1174,20 @@
       {
         "type": "code",
         "source": "pe = PatchEmbedding(224, 16, 3, 768)\nx = torch.randn(1, 3, 224, 224)\nprint('Output:', pe(x).shape)\nprint('Patches:', pe.num_patches)",
+        "role": "demo"
+      }
+    ]
+  },
+  "action_level_distillation": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0):\n    if not action_spans:\n        return torch.zeros((), dtype=student_logits.dtype)\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    span_losses = [per_tok[start:end].mean() for start, end in action_spans]\n    return torch.stack(span_losses).mean() * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nteacher = torch.randn(12, 8)\nstudent = teacher + 0.4 * torch.randn(12, 8)\n# the agent decided at tokens 0-1 and 6-9; everything else is environment\nspans = [(0, 2), (6, 10)]\nprint(action_level_distillation_loss(student, teacher, spans, temperature=2.0).item())",
         "role": "demo"
       }
     ]
@@ -1094,6 +1318,20 @@
       {
         "type": "code",
         "source": "logps = torch.tensor([0.0, -0.5, -1.0, -1.5])\nrewards = torch.tensor([1.0, 0.8, 0.2, 0.0])\ngroup_ids = torch.tensor([0, 0, 1, 1])\nprint('Loss:', grpo_loss(logps, rewards, group_ids).item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "hybrid_attention_mask": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef hybrid_attention_mask(seq_len, layer_types, window_size):\n    causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool))\n    rows = torch.arange(seq_len).unsqueeze(1)   # query index i\n    cols = torch.arange(seq_len).unsqueeze(0)   # key index j\n    band = (cols <= rows) & (rows - cols < window_size)\n    masks = []\n    for layer in layer_types:\n        if layer == \"local\":\n            masks.append(band.clone())\n        elif layer == \"global\":\n            masks.append(causal.clone())\n        else:\n            raise ValueError(f\"unknown layer type: {layer!r}\")\n    return masks",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\nmasks = hybrid_attention_mask(12, ['local', 'global', 'local', 'global'], 4)\nfor i, m in enumerate(masks):\n    kind = ['local', 'global', 'local', 'global'][i]\n    print(f'layer {i} ({kind:6s}) — connections: {int(m.sum())} / {12 * 12}')",
         "role": "demo"
       }
     ]
@@ -1233,6 +1471,20 @@
       }
     ]
   },
+  "on_policy_distillation": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    sel = per_tok[generated_mask]\n    if sel.numel() == 0:\n        return torch.zeros((), dtype=per_tok.dtype)\n    return sel.mean() * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nteacher = torch.randn(2, 5, 9)\nstudent = teacher + 0.3 * torch.randn(2, 5, 9)\nmask = torch.tensor([[True, True, False, False, True], [True, False, True, True, False]])\nprint(on_policy_distillation_loss(student, teacher, mask, temperature=2.0).item())",
+        "role": "demo"
+      }
+    ]
+  },
   "paged_attention": {
     "cells": [
       {
@@ -1285,6 +1537,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(42)\nB, S, D = 2, 8, 16\nQ = torch.randn(B, S, D)\nK = torch.randn(B, S, D)\nV = torch.randn(B, S, D)\n\nscale = D ** -0.5\nscores_ref = (Q @ K.transpose(-2, -1)) * scale\nref_out = torch.softmax(scores_ref, dim=-1) @ V\n\nfor num_devices in [2, 4]:\n    ring_out = ring_attention(Q, K, V, num_devices=num_devices)\n    max_diff = (ring_out - ref_out).abs().max().item()\n    match = torch.allclose(ring_out, ref_out, atol=1e-5)\n    print(f'num_devices={num_devices}  shape={tuple(ring_out.shape)}  max_diff={max_diff:.2e}  match={match}')",
+        "role": "demo"
+      }
+    ]
+  },
+  "shared_expert_moe": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\n\ndef shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k):\n    scores = torch.softmax(hidden_states @ router_weight.T, dim=-1)\n    vals, idx = scores.topk(top_k, dim=-1)\n    weights = vals / vals.sum(dim=-1, keepdim=True)\n\n    expert_out = torch.einsum(\"td,edo->teo\", hidden_states, expert_weights)\n    d_out = expert_out.shape[-1]\n    sel = expert_out.gather(1, idx.unsqueeze(-1).expand(-1, -1, d_out))\n    routed = (weights.unsqueeze(-1) * sel).sum(dim=1)\n    shared = hidden_states @ shared_expert_weight\n    return routed + shared",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nx = torch.randn(4, 8)\nrouter = torch.randn(6, 8)\nexperts = torch.randn(6, 8, 8)\nshared = torch.randn(8, 8)\nout = shared_expert_moe(x, router, experts, shared, top_k=2)\nprint('output shape:', tuple(out.shape))\nprint('activated params: 2/6 routed experts + 1 shared expert per token')",
         "role": "demo"
       }
     ]
@@ -1355,6 +1621,20 @@
       {
         "type": "code",
         "source": "torch.manual_seed(0)\nbatch, num_patches, d_model, num_heads = 2, 16, 64, 4\n\nblock = ViTBlock(d_model, num_heads)\nx = torch.randn(batch, num_patches, d_model)\nout = block(x)\n\nprint(\"Input shape: \", x.shape)    # (2, 16, 64)\nprint(\"Output shape:\", out.shape)  # (2, 16, 64)\nassert out.shape == x.shape, \"Shape mismatch!\"\nprint(\"Shape preserved: True\")",
+        "role": "demo"
+      }
+    ]
+  },
+  "yarn_rope": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import math\nimport torch\n\n\ndef _correction_dim(num_rotations, head_dim, base, max_position):\n    return (head_dim * math.log(max_position / (num_rotations * 2 * math.pi))) / (2 * math.log(base))\n\n\ndef yarn_rope_cache(positions, head_dim, base=10000.0, original_max_position=2048,\n                    scale_factor=4.0, beta_fast=32.0, beta_slow=1.0):\n    half = head_dim // 2\n    inv_freq = base ** (torch.arange(0, head_dim, 2).float() / head_dim)\n    interpolation = inv_freq / scale_factor\n    extrapolation = inv_freq\n\n    low = max(math.floor(_correction_dim(beta_fast, head_dim, base, original_max_position)), 0)\n    high = min(math.ceil(_correction_dim(beta_slow, head_dim, base, original_max_position)), head_dim - 1)\n    if low == high:\n        high += 1\n\n    idx = torch.arange(half, dtype=torch.float32)\n    ramp = ((idx - low) / (high - low)).clamp(0, 1)\n    mask = 1 - ramp\n    inv_freq = interpolation * (1 - mask) + extrapolation * mask\n\n    attn_factor = 1.0 + 0.1 * math.log(scale_factor)\n    freqs = torch.outer(positions.float(), inv_freq)\n    emb = torch.cat((freqs, freqs), dim=-1)\n    return emb.cos() * attn_factor, emb.sin() * attn_factor",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\npositions = torch.arange(0, 1024, 16)\ncos, sin = yarn_rope_cache(positions, 32, original_max_position=4096, scale_factor=8.0)\nprint('cos shape:', tuple(cos.shape))\nprint('position 1000, dims 0/4/12:', cos[62, 0].item(), cos[62, 8].item(), cos[62, 24].item())",
         "role": "demo"
       }
     ]

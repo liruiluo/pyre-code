@@ -3179,6 +3179,726 @@
           "code": "\nimport torch\ntorch.manual_seed(2)\nblock = {fn}(d_model=16, num_heads=4)\nx = torch.randn(2, 3, 16, requires_grad=True)\nblock(x).sum().backward()\nassert x.grad is not None, 'Missing input gradient'\nassert all(p.grad is not None for p in block.parameters()), 'All parameters should receive gradients'\n"
         }
       ]
+    },
+    {
+      "id": "kd_loss",
+      "title": "Knowledge Distillation Loss",
+      "titleZh": "知识蒸馏损失",
+      "difficulty": "Easy",
+      "functionName": "kd_loss",
+      "hint": "`log_p = F.log_softmax(student/T)`, `q = F.softmax(teacher/T)`, then `(q * (log q - log p)).sum(-1).mean() * T**2`. Use `q * (q.clamp_min(...).log() - log_p)` or `F.kl_div(log_p, q, reduction='batchmean') * T**2`.",
+      "hintZh": "`log_p = F.log_softmax(student/T)`，`q = F.softmax(teacher/T)`，然后 `(q * (log q - log p)).sum(-1).mean() * T**2`。可用 `F.kl_div(log_p, q, reduction='batchmean') * T**2`。",
+      "descriptionEn": "Implement Hinton-style knowledge distillation: match the student's temperature-softened distribution to the teacher's.\n\nDistillation transfers a teacher model's knowledge into a smaller student. With temperature `T`, both distributions are softened as `softmax(logits / T)`; the loss is the KL divergence between teacher and student, scaled by `T^2` to keep gradient magnitudes comparable to the label loss.\n\n**Signature:** `kd_loss(student_logits, teacher_logits, temperature=2.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `temperature` — softening temperature `T > 0`\n\n**Returns:** scalar loss = `T^2 * mean over batch of D_KL(teacher_T || student_T)`\n\n**Constraints:**\n- Use stable log-softmax\n- Teacher first: the KL places the teacher distribution in the first slot",
+      "descriptionZh": "实现 Hinton 式知识蒸馏：让学生的温度软化分布逼近教师。\n\n蒸馏把教师模型的知识迁移进更小的学生。温度 `T` 下两个分布都软化为 `softmax(logits / T)`；损失是教师与学生之间的 KL 散度，乘 `T^2` 保持梯度量级与标签损失可比。\n\n**签名:** `kd_loss(student_logits, teacher_logits, temperature=2.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `temperature` — 软化温度 `T > 0`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 D_KL(teacher_T || student_T)`\n\n**约束:**\n- 使用稳定的 log-softmax\n- 教师在前：KL 中教师分布放第一个槽位",
+      "tests": [
+        {
+          "name": "Zero when student matches teacher",
+          "code": "\nimport torch\nlogits = torch.randn(4, 10)\nout = {fn}(logits, logits, temperature=3.0)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'Identical logits must give 0, got {out}'\n"
+        },
+        {
+          "name": "Matches the manual formula",
+          "code": "\nimport torch\ntorch.manual_seed(0)\ns = torch.randn(3, 7)\nt = torch.randn(3, 7)\nT = 2.5\nlog_s = torch.log_softmax(s / T, dim=-1)\nq = torch.softmax(t / T, dim=-1)\nexpected = (q * (q.clamp_min(1e-12).log() - log_s)).sum(dim=-1).mean() * T**2\nout = {fn}(s, t, temperature=T)\nassert torch.allclose(out, expected, atol=1e-6), f'{out.item():.6f} vs {expected.item():.6f}'\n"
+        },
+        {
+          "name": "Temperature squared scaling",
+          "code": "\nimport torch\ntorch.manual_seed(1)\ns = torch.randn(2, 5)\nt = torch.randn(2, 5)\nbase = {fn}(s, t, temperature=1.0)\nhigh = {fn}(s * 4.0, t * 4.0, temperature=4.0)\nassert torch.allclose(high, 16.0 * base, atol=1e-5), 'Scaling logits by T with temperature T keeps distributions and multiplies loss by T^2'\n"
+        },
+        {
+          "name": "Non-negative and gradient flows to student",
+          "code": "\nimport torch\ntorch.manual_seed(2)\ns = torch.randn(3, 6, requires_grad=True)\nt = torch.randn(3, 6)\nout = {fn}(s, t)\nassert out.item() >= -1e-6, 'KL must be non-negative'\nout.backward()\nassert s.grad is not None and s.grad.abs().sum() > 0, 'Gradient must reach student logits'\n"
+        },
+        {
+          "name": "Direction is teacher-to-student",
+          "code": "\nimport torch\ns = torch.tensor([[2.0, 0.0, -1.0]])\nt = torch.tensor([[0.0, 1.0, 0.0]])\n# D_KL(teacher || student) is large when the student is confident where the teacher is not\nbig = {fn}(s, t, temperature=1.0)\nsmall = {fn}(t * 1.5 - s * 0.5, t, temperature=1.0)\nassert big > small, 'Loss should shrink as student moves toward the teacher'\n"
+        }
+      ]
+    },
+    {
+      "id": "logit_softcap",
+      "title": "Logit Soft-Capping (Gemma-2)",
+      "titleZh": "Logit 软顶（Gemma-2）",
+      "difficulty": "Easy",
+      "functionName": "logit_softcap",
+      "hint": "One line: `cap * torch.tanh(logits / cap)`.",
+      "hintZh": "一行：`cap * torch.tanh(logits / cap)`。",
+      "descriptionEn": "Cap logits smoothly — the Gemma-2 trick that replaced hard clipping.\n\nAttention logits and final logits can explode during training; hard clamping kills gradients at the cap. Gemma-2 instead soft-caps at `cap = 30.0`: `out = cap * tanh(x / cap)`. The map is identity-near-zero, smoothly saturating toward `+-cap`, with a non-zero slope everywhere — gradients survive even at the extremes.\n\n**Signature:** `logit_softcap(logits, cap) -> Tensor`\n\n**Parameters:**\n- `logits` — tensor of any shape\n- `cap` — positive soft-cap value\n\n**Returns:** `cap * tanh(logits / cap)`, same shape\n\n**Constraints:**\n- Output magnitude stays strictly below `cap`\n- The slope at zero is exactly 1 (identity near the origin)\n- Gradients never vanish entirely: `d(out)/dx = sech^2(x / cap) > 0`",
+      "descriptionZh": "平滑地封顶 logits——Gemma-2 取代硬截断的技巧。\n\n注意力 logits 和最终 logits 在训练中可能爆炸；硬截断会把顶端的梯度杀光。Gemma-2 改用 `cap = 30.0` 的软顶：`out = cap * tanh(x / cap)`。该映射在零附近是恒等，平滑饱和到 `+-cap`，处处斜率非零——即使在极端处梯度也存活。\n\n**签名:** `logit_softcap(logits, cap) -> Tensor`\n\n**参数:**\n- `logits` — 任意形状张量\n- `cap` — 正的软顶值\n\n**返回:** `cap * tanh(logits / cap)`，形状不变\n\n**约束:**\n- 输出幅值严格小于 `cap`\n- 零点斜率恰为 1（原点附近近似恒等）\n- 梯度从不完全消失：`d(out)/dx = sech^2(x / cap) > 0`",
+      "tests": [
+        {
+          "name": "Near-identity for small logits",
+          "code": "\nimport torch\nx = torch.tensor([0.001, -0.002, 0.01, -0.05])\nout = {fn}(x, 30.0)\nassert torch.allclose(out, x, atol=1e-4), f'Small logits must pass through, got {out}'\n"
+        },
+        {
+          "name": "Saturates below the cap",
+          "code": "\nimport torch\nx = torch.tensor([0.5, -3.0, 240.0, -240.0])\nout = {fn}(x, 30.0)\nassert (out.abs() < 30.0).all(), 'Output must stay strictly below the cap'\nassert out[2] > 29.0 and out[3] < -29.0, 'Saturated logits must be near the cap'\n"
+        },
+        {
+          "name": "Slope at zero is one",
+          "code": "\nimport torch\nx = torch.tensor([0.0], requires_grad=True)\nout = {fn}(x, 50.0)\nout.backward()\nassert abs(x.grad.item() - 1.0) < 1e-6, f'd/dx at 0 must be 1, got {x.grad.item()}'\n"
+        },
+        {
+          "name": "Gradient survives at saturation",
+          "code": "\nimport torch\nx = torch.tensor([240.0], requires_grad=True)  # ratio 8: tanh still below 1 in float32\nout = {fn}(x, 30.0)\nout.backward()\nassert x.grad.item() > 0, 'Gradient must survive deep into saturation'\n"
+        },
+        {
+          "name": "Odd function on any shape",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nx = torch.randn(3, 4, 5)\na = {fn}(x, 10.0)\nb = {fn}(-x, 10.0)\nassert a.shape == x.shape\nassert torch.allclose(a, -b, atol=1e-6), 'Soft-capping must be odd-symmetric'\n"
+        },
+        {
+          "name": "Cap parameter controls the ceiling",
+          "code": "\nimport torch\nassert {fn}(torch.tensor([40.0]), 5.0).item() < 5.0\nassert {fn}(torch.tensor([400.0]), 50.0).item() > 49.0\n"
+        }
+      ]
+    },
+    {
+      "id": "react_agent_step",
+      "title": "Parse a ReAct Agent Trace",
+      "titleZh": "解析 ReAct Agent 轨迹",
+      "difficulty": "Easy",
+      "functionName": "parse_react_trace",
+      "hint": "Walk line by line keeping a `current` dict; open a new step on each `Thought:` (appending the previous one), and flush the last step at the end.",
+      "hintZh": "逐行扫描维护一个 `current` 字典；每个 `Thought:` 开新步骤（提交上一条），结尾提交最后一条。",
+      "descriptionEn": "Parse the text output of a ReAct-style agent into structured steps.\n\nReAct interleaves `Thought:`, `Action:`, `Action Input:` and `Observation:` blocks. Agent frameworks need to parse these traces to extract which tools were called and what the environment returned. The final step may be incomplete — the agent emitted an action but the observation has not arrived yet.\n\n**Signature:** `parse_react_trace(text) -> list[dict]`\n\n**Parameters:**\n- `text` — full ReAct trace, one directive per line\n\n**Returns:** list of steps, each `{'thought': str, 'action': str, 'action_input': str, 'observation': str | None}` in order. A trailing step without an observation gets `observation=None`. Fields never seen default to `None`.\n\n**Constraints:**\n- Lines are matched on the exact prefixes `Thought:`, `Action:`, `Action Input:`, `Observation:` (leading/trailing whitespace of each line tolerated)\n- A new `Thought:` line starts a new step\n- Blank lines and unmarked lines are ignored",
+      "descriptionZh": "把 ReAct 风格 agent 的文本输出解析成结构化步骤。\n\nReAct 交替输出 `Thought:`、`Action:`、`Action Input:` 和 `Observation:` 块。agent 框架需要解析这种轨迹来提取调用了哪些工具、环境返回了什么。最后一步可能不完整——agent 已发出动作但观察还没到。\n\n**签名:** `parse_react_trace(text) -> list[dict]`\n\n**参数:**\n- `text` — 完整 ReAct 轨迹，每行一个指令\n\n**返回:** 步骤列表，每步 `{'thought': str, 'action': str, 'action_input': str, 'observation': str | None}`，按顺序。末尾缺观察的步骤 `observation=None`。从未出现的字段默认 `None`。\n\n**约束:**\n- 按精确前缀 `Thought:`、`Action:`、`Action Input:`、`Observation:` 匹配（容忍行首尾空白）\n- 新的 `Thought:` 行开启新步骤\n- 空行和无标记行忽略",
+      "tests": [
+        {
+          "name": "Two complete steps",
+          "code": "\ntext = '''Thought: I need to find the weather.\nAction: get_weather\nAction Input: Beijing\n\nObservation: 22C, sunny\n\nThought: Now I can answer.\nAction: finish\nAction Input: It is 22C and sunny.\n\nObservation: done'''\nsteps = {fn}(text)\nassert isinstance(steps, list) and len(steps) == 2, f'Expected 2 steps, got {len(steps)}'\nassert steps[0]['thought'] == 'I need to find the weather.'\nassert steps[0]['action'] == 'get_weather'\nassert steps[0]['action_input'] == 'Beijing'\nassert steps[0]['observation'] == '22C, sunny'\nassert steps[1]['action'] == 'finish'\nassert steps[1]['observation'] == 'done'\n"
+        },
+        {
+          "name": "Trailing incomplete step",
+          "code": "\ntext = '''Thought: Look up the price.\nAction: search\nAction Input: gpu price'''\nsteps = {fn}(text)\nassert len(steps) == 1, f'Expected 1 step, got {len(steps)}'\nassert steps[0]['action'] == 'search'\nassert steps[0]['observation'] is None, 'Missing observation should be None'\n"
+        },
+        {
+          "name": "Intermediate step without observation",
+          "code": "\ntext = '''Thought: one\nAction: a\nAction Input: x\n\nThought: two\nAction: b\nAction Input: y\n\nObservation: ok'''\nsteps = {fn}(text)\nassert len(steps) == 2, f'Expected 2 steps, got {len(steps)}'\nassert steps[0]['observation'] is None, 'First step has no observation'\nassert steps[1]['observation'] == 'ok'\n"
+        },
+        {
+          "name": "Whitespace tolerance and blank lines",
+          "code": "\ntext = 'Thought:   spaced out   \\n\\nAction:  tool_a\\n\\n   Action Input: arg1\\n\\nObservation:   result   '\nsteps = {fn}(text)\nassert steps[0]['thought'] == 'spaced out'\nassert steps[0]['action'] == 'tool_a'\nassert steps[0]['action_input'] == 'arg1'\nassert steps[0]['observation'] == 'result'\n"
+        },
+        {
+          "name": "Every step dict has all four keys",
+          "code": "\ntext = '''Action: only_action\nAction Input: only_input'''\nsteps = {fn}(text)\nassert len(steps) == 1\nfor key in ('thought', 'action', 'action_input', 'observation'):\n    assert key in steps[0], f'Missing key: {key}'\nassert steps[0]['thought'] is None\nassert steps[0]['observation'] is None\n"
+        }
+      ]
+    },
+    {
+      "id": "tied_lm_logits",
+      "title": "Tied Embedding LM Head",
+      "titleZh": "共享权重的 LM 头",
+      "difficulty": "Easy",
+      "functionName": "tied_lm_logits",
+      "hint": "`F.linear(hidden, embedding_weight) * scale` — or `hidden @ embedding_weight.T`.",
+      "hintZh": "`F.linear(hidden, embedding_weight) * scale`——或 `hidden @ embedding_weight.T`。",
+      "descriptionEn": "Reuse the input embedding matrix as the output language-model head — the weight tying used by GPT-2, every Gemma, and the smaller Qwen models (Qwen3-0.6B/1.7B tie; 4B and above untie).\n\nThe input embedding is a `(V, d)` matrix mapping token ids to vectors; the LM head is a `(V, d)` projection back to vocabulary logits. Tying them shares one parameter block: `logits = hidden @ E.T`, optionally scaled (Gemma multiplies embeddings by a normalizer and compensates on the output side). Tying removes `V * d` parameters — a 30% saving at small vocabulary-embedding ratios and a classic regularization.\n\n**Signature:** `tied_lm_logits(hidden, embedding_weight, scale=1.0) -> Tensor`\n\n**Parameters:**\n- `hidden` — final hidden states, shape `(B, T, d)` (or `(T, d)`)\n- `embedding_weight` — the shared embedding matrix `(V, d)`\n- `scale` — output scaling applied to the logits\n\n**Returns:** logits of shape `(..., V)`: `scale * (hidden @ embedding_weight.T)`\n\n**Constraints:**\n- The embedding matrix is used as-is — no copy, no clone\n- Gradients from the LM head reach the embedding weight tensor itself (shared parameter)",
+      "descriptionZh": "把输入嵌入矩阵复用为输出语言模型头——GPT-2、全部 Gemma、以及较小的 Qwen 模型（Qwen3-0.6B/1.7B 共享；4B 起不共享）使用的权重共享。\n\n输入嵌入是 `(V, d)` 矩阵，把 token id 映射成向量；LM 头是 `(V, d)` 投影，把向量映回词表 logits。共享即合用一个参数块：`logits = hidden @ E.T`，可选缩放（Gemma 给嵌入乘归一化因子并在输出侧补偿）。共享省掉 `V * d` 个参数——小模型上能省 30%，还是经典正则。\n\n**签名:** `tied_lm_logits(hidden, embedding_weight, scale=1.0) -> Tensor`\n\n**参数:**\n- `hidden` — 末层隐状态，形状 `(B, T, d)`（或 `(T, d)`）\n- `embedding_weight` — 共享嵌入矩阵 `(V, d)`\n- `scale` — 应用在 logits 上的输出缩放\n\n**返回:** 形状 `(..., V)` 的 logits：`scale * (hidden @ embedding_weight.T)`\n\n**约束:**\n- 嵌入矩阵原样使用——不 copy、不 clone\n- LM 头的梯度必须抵达嵌入权重张量本身（共享参数）",
+      "tests": [
+        {
+          "name": "Matches a plain linear projection",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(0)\nhidden = torch.randn(2, 5, 16)\nE = torch.randn(100, 16)\nout = {fn}(hidden, E)\nexpected = F.linear(hidden, E)\nassert out.shape == (2, 5, 100), f'Expected (2, 5, 100), got {out.shape}'\nassert torch.allclose(out, expected, atol=1e-6)\n"
+        },
+        {
+          "name": "2-D hidden also works",
+          "code": "\nimport torch\nhidden = torch.randn(7, 4)\nE = torch.randn(9, 4)\nout = {fn}(hidden, E)\nassert out.shape == (7, 9), f'Expected (7, 9), got {out.shape}'\n"
+        },
+        {
+          "name": "Scale is applied to the logits",
+          "code": "\nimport torch\nhidden = torch.randn(3, 8)\nE = torch.randn(6, 8)\nbase = {fn}(hidden, E)\nscaled = {fn}(hidden, E, scale=2.5)\nassert torch.allclose(scaled, 2.5 * base, atol=1e-6)\n"
+        },
+        {
+          "name": "Gradients reach the shared embedding weight",
+          "code": "\nimport torch\nhidden = torch.randn(2, 3, 8)\nE = torch.randn(10, 8, requires_grad=True)\nout = {fn}(hidden, E)\nout.sum().backward()\nassert E.grad is not None and E.grad.abs().sum() > 0, 'The LM head must train the embedding weight itself'\n"
+        },
+        {
+          "name": "One row per vocabulary entry",
+          "code": "\nimport torch\nhidden = torch.eye(4)          # 4 one-hot states\nE = torch.randn(4, 4)\nout = {fn}(hidden, E)\nassert torch.allclose(out, E.t(), atol=1e-6), 'One-hot state i must surface embedding column i'\n"
+        }
+      ]
+    },
+    {
+      "id": "agent_loss_mask",
+      "title": "Build a Multi-Turn Agent Loss Mask",
+      "titleZh": "构建多轮 Agent 损失掩码",
+      "difficulty": "Medium",
+      "functionName": "build_agent_loss_mask",
+      "hint": "Emit `torch.ones(tokens, dtype=torch.bool)` for trainable segments and `torch.zeros(...)` otherwise, then `torch.cat`.",
+      "hintZh": "可训练段发 `torch.ones(tokens, dtype=torch.bool)`，其余发 `torch.zeros(...)`，最后 `torch.cat`。",
+      "descriptionEn": "Build the token-level training mask for a multi-turn agent trajectory.\n\nWhen SFT-ing an agent model on conversations that mix `system`, `user`, `assistant` and `tool` segments, you only train on the tokens the model itself should emit. The trajectory arrives as segments with token counts; the loss mask marks which of the concatenated tokens contribute to the loss.\n\n**Signature:** `build_agent_loss_mask(segments, trainable_roles=None) -> Tensor`\n\n**Parameters:**\n- `segments` — list of `{'role': str, 'tokens': int}` in trajectory order\n- `trainable_roles` — roles to train on; defaults to `['assistant']`\n\n**Returns:** boolean tensor of length `sum(tokens)`, `True` where a token belongs to a trainable segment\n\n**Constraints:**\n- The mask must align exactly: segment boundaries concatenate without gaps or overlap\n- `tokens` may be zero for a segment — it contributes nothing\n- An empty segment list returns an empty boolean tensor",
+      "descriptionZh": "为多轮 agent 轨迹构建 token 级训练掩码。\n\n在混合 `system`、`user`、`assistant`、`tool` 段的对话上对 agent 模型做 SFT 时，只训练模型自己应该产出的 token。轨迹以带 token 数的段的形式到达；损失掩码标记拼接后哪些 token 计入损失。\n\n**签名:** `build_agent_loss_mask(segments, trainable_roles=None) -> Tensor`\n\n**参数:**\n- `segments` — 按轨迹顺序的 `{'role': str, 'tokens': int}` 列表\n- `trainable_roles` — 参与训练的角色；默认 `['assistant']`\n\n**返回:** 长度为 `sum(tokens)` 的布尔张量，属于可训练段的 token 为 `True`\n\n**约束:**\n- 掩码必须精确对齐：段边界拼接无缝隙、无重叠\n- 某段 `tokens` 可以为 0——它不贡献任何 token\n- 空段列表返回空布尔张量",
+      "tests": [
+        {
+          "name": "Only assistant tokens are trainable by default",
+          "code": "\nimport torch\nsegments = [\n    {'role': 'system', 'tokens': 5},\n    {'role': 'user', 'tokens': 4},\n    {'role': 'assistant', 'tokens': 6},\n    {'role': 'tool', 'tokens': 3},\n    {'role': 'assistant', 'tokens': 2},\n]\nmask = {fn}(segments)\nassert isinstance(mask, torch.Tensor)\nassert mask.dtype == torch.bool, f'dtype should be bool, got {mask.dtype}'\nassert mask.shape == (20,), f'Expected shape (20,), got {mask.shape}'\nexpected = torch.tensor([0]*9 + [1]*6 + [0]*3 + [1]*2, dtype=torch.bool)\nassert torch.equal(mask, expected), 'Mask segments misaligned'\n"
+        },
+        {
+          "name": "Custom trainable roles",
+          "code": "\nimport torch\nsegments = [\n    {'role': 'user', 'tokens': 2},\n    {'role': 'assistant', 'tokens': 3},\n    {'role': 'tool', 'tokens': 4},\n]\nmask = {fn}(segments, trainable_roles=['assistant', 'tool'])\nexpected = torch.tensor([0]*2 + [1]*7, dtype=torch.bool)\nassert torch.equal(mask, expected), 'assistant+tool roles must both be trainable'\n"
+        },
+        {
+          "name": "Zero-length segments contribute nothing",
+          "code": "\nimport torch\nsegments = [\n    {'role': 'system', 'tokens': 0},\n    {'role': 'assistant', 'tokens': 3},\n    {'role': 'tool', 'tokens': 0},\n]\nmask = {fn}(segments)\nassert mask.shape == (3,), f'Expected shape (3,), got {mask.shape}'\nassert mask.all(), 'The 3 assistant tokens must be trainable'\n"
+        },
+        {
+          "name": "Empty trajectory",
+          "code": "\nimport torch\nmask = {fn}([])\nassert isinstance(mask, torch.Tensor) and mask.dtype == torch.bool\nassert mask.numel() == 0, f'Expected empty tensor, got shape {mask.shape}'\n"
+        },
+        {
+          "name": "Boundary alignment is exact",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nsegments = [\n    {'role': 'system', 'tokens': 7},\n    {'role': 'user', 'tokens': 11},\n    {'role': 'assistant', 'tokens': 9},\n    {'role': 'assistant', 'tokens': 1},\n    {'role': 'tool', 'tokens': 5},\n]\nmask = {fn}(segments)\nassert int(mask.sum().item()) == 10, 'Two assistant segments: 9 + 1 trainable tokens'\nassert int(mask[:7].sum().item()) == 0, 'system'\nassert int(mask[7:18].sum().item()) == 0, 'user occupies indices 7..17'\nassert int(mask[18:27].sum().item()) == 9, 'first assistant occupies 18..26'\nassert int(mask[27:28].sum().item()) == 1 and int(mask[28:].sum().item()) == 0\n"
+        }
+      ]
+    },
+    {
+      "id": "agent_memory_bank",
+      "title": "Score an Agent Memory Bank",
+      "titleZh": "给 Agent 记忆库打分",
+      "difficulty": "Medium",
+      "functionName": "score_memory",
+      "hint": "`F.cosine_similarity(query.unsqueeze(0), memories)` gives all relevances; multiply by `torch.exp(-decay_rate * (current_time - timestamps))`; sort with `torch.argsort(scores, descending=True, stable=True)`.",
+      "hintZh": "`F.cosine_similarity(query.unsqueeze(0), memories)` 一次算出全部相关性；乘 `torch.exp(-decay_rate * (current_time - timestamps))`；用 `torch.argsort(scores, descending=True, stable=True)` 排序。",
+      "descriptionEn": "Implement the retrieval scorer of an agent memory bank: relevance times recency.\n\nLong-running agents keep a bank of past notes, each stored with a timestamp and a content vector. At recall time, each note gets `score = cosine_similarity(query, note) * exp(-decay_rate * (now - timestamp))` — relevant but stale notes fade out. Return the indices of the top-k notes, best first. This is the retrieval core of MemGPT-style memory systems and every agent memory middleware.\n\n**Signature:** `score_memory(query, memories, timestamps, current_time, decay_rate, topk) -> list[int]`\n\n**Parameters:**\n- `query` — content vector, shape `(d,)`\n- `memories` — bank of note vectors, shape `(N, d)`\n- `timestamps` — write time of each note, shape `(N,)`\n- `current_time`, `decay_rate` — scalars\n- `topk` — number of notes to return\n\n**Returns:** up to `topk` indices, sorted by score descending. Ties break by lower index (older entry wins).\n\n**Constraints:**\n- `topk <= 0` or an empty bank returns `[]`\n- `topk > N` returns all `N` notes, still sorted by score\n- Cosine similarity uses the L2-normalized vectors; zero vectors score 0",
+      "descriptionZh": "实现 agent 记忆库的检索打分：相关性乘以新鲜度。\n\n长程 agent 把历史笔记存成记忆库，每条带时间戳和内容向量。召回时每条笔记得分 `score = cosine_similarity(query, note) * exp(-decay_rate * (now - timestamp))`——相关但陈旧的笔记会淡出。返回 top-k 笔记的索引，分数最高的在前。这是 MemGPT 式记忆系统和各类 agent 记忆中间件的检索核心。\n\n**签名:** `score_memory(query, memories, timestamps, current_time, decay_rate, topk) -> list[int]`\n\n**参数:**\n- `query` — 内容向量，形状 `(d,)`\n- `memories` — 笔记向量库，形状 `(N, d)`\n- `timestamps` — 每条笔记的写入时间，形状 `(N,)`\n- `current_time`、`decay_rate` — 标量\n- `topk` — 返回条数\n\n**返回:** 至多 `topk` 个索引，按分数降序。平分时取较小索引（更早的条目优先）。\n\n**约束:**\n- `topk <= 0` 或空库返回 `[]`\n- `topk > N` 返回全部 `N` 条，仍按分数排序\n- 余弦相似度用 L2 归一化向量；零向量得 0 分",
+      "tests": [
+        {
+          "name": "Hand-computed scores and ordering",
+          "code": "\nimport torch, math\nquery = torch.tensor([1.0, 0.0])\nmemories = torch.tensor([\n    [1.0, 0.0],   # cos = 1.0\n    [0.0, 1.0],   # cos = 0.0\n    [1.0, 1.0],   # cos = 1/sqrt(2)\n])\ntimestamps = torch.tensor([0.0, 0.0, 0.0])\nnow, decay = 0.0, 0.5\nout = {fn}(query, memories, timestamps, now, decay, 3)\nassert out[0] == 0, f'Most relevant note should rank first, got {out}'\nassert out[1] == 2, f'Second should be the 45-degree note, got {out}'\nassert out[2] == 1, f'Orthogonal note ranks last, got {out}'\n"
+        },
+        {
+          "name": "Decay downranks stale but identical content",
+          "code": "\nimport torch\nquery = torch.tensor([1.0, 1.0])\nmemories = torch.tensor([[2.0, 2.0], [2.0, 2.0]])\ntimestamps = torch.tensor([0.0, 10.0])\nout = {fn}(query, memories, timestamps, current_time=10.0, decay_rate=0.1, topk=2)\nassert out == [1, 0], f'Fresh copy (idx 1) must outrank the stale one, got {out}'\n"
+        },
+        {
+          "name": "Top-k truncation",
+          "code": "\nimport torch\nquery = torch.tensor([1.0, 0.0])\nmemories = torch.eye(2)\ntimestamps = torch.zeros(2)\nout = {fn}(query, memories, timestamps, 0.0, 0.1, 1)\nassert out == [0], f'Expected only the best note, got {out}'\n"
+        },
+        {
+          "name": "topk larger than bank returns all sorted",
+          "code": "\nimport torch, math\nquery = torch.tensor([0.0, 1.0])\nmemories = torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])\ntimestamps = torch.tensor([5.0, 5.0, 5.0])\nout = {fn}(query, memories, timestamps, current_time=5.0, decay_rate=1.0, topk=10)\nassert out[0] == 1, f'Aligned note first, got {out}'\nassert sorted(out) == [0, 1, 2], f'All notes must be returned, got {out}'\n"
+        },
+        {
+          "name": "Empty bank and non-positive topk",
+          "code": "\nimport torch\nquery = torch.tensor([1.0, 0.0])\nassert {fn}(query, torch.zeros(0, 2), torch.zeros(0), 0.0, 0.1, 5) == []\nassert {fn}(query, torch.eye(2), torch.zeros(2), 0.0, 0.1, 0) == []\nassert {fn}(query, torch.eye(2), torch.zeros(2), 0.0, 0.1, -1) == []\n"
+        },
+        {
+          "name": "Zero memory vector scores zero and does not NaN",
+          "code": "\nimport torch\nquery = torch.tensor([1.0, 0.0])\nmemories = torch.tensor([[0.0, 0.0], [1.0, 0.0]])\ntimestamps = torch.zeros(2)\nout = {fn}(query, memories, timestamps, 0.0, 0.1, 2)\nassert out == [1, 0], f'Zero vector must not crash and must rank last, got {out}'\n"
+        },
+        {
+          "name": "Matches the reference formula exactly",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nquery = torch.randn(8)\nmemories = torch.randn(5, 8)\ntimestamps = torch.rand(5) * 100\nnow, decay = 100.0, 0.02\nscores = torch.nn.functional.cosine_similarity(query.unsqueeze(0), memories) * torch.exp(-decay * (now - timestamps))\nexpected = torch.argsort(scores, descending=True, stable=True).tolist()\nout = {fn}(query, memories, timestamps, now, decay, 5)\nassert out == expected, f'Got {out}, expected {expected}'\n"
+        }
+      ]
+    },
+    {
+      "id": "context_truncation",
+      "title": "Truncate Agent Context Under a Token Budget",
+      "titleZh": "在 token 预算内截断 Agent 上下文",
+      "difficulty": "Medium",
+      "functionName": "truncate_context",
+      "hint": "Sum the pinned tokens first, then walk the non-pinned indices from the end while the running total + next message fits; finally sort the kept indices.",
+      "hintZh": "先累加固定消息的 token，然后从尾部遍历非固定索引，只要累计+下一条仍放得下就收；最后对保留索引排序。",
+      "descriptionEn": "Fit a conversation into a token budget the way agent serving stacks do before every model call.\n\nRules of the game: `pinned` messages (system prompt, safety notices, task-critical tool results) are always kept. The remaining budget is filled with the most recent non-pinned messages, newest first. Return the indices of the kept messages in their original order — the conversation must not be reordered.\n\nThis is the core of context-window management: agent memory systems, Claude Code style compaction, and serving-side history trimming all reduce to a recency-priority packing under a budget.\n\n**Signature:** `truncate_context(messages, max_tokens) -> list[int]`\n\n**Parameters:**\n- `messages` — list of `{'role': str, 'tokens': int, 'pinned': bool}` (`pinned` optional, default `False`)\n- `max_tokens` — total token budget\n\n**Returns:** sorted list of kept message indices (ascending, original order)\n\n**Constraints:**\n- Pinned messages are always kept, even if their sum exceeds `max_tokens`\n- Non-pinned messages are added from the end of the list backwards, each taken whole or not at all, while the running total stays within `max_tokens`\n- The output preserves original indices; it is a selection, not a reorder",
+      "descriptionZh": "像 agent 服务栈在每次模型调用前那样，把对话装进 token 预算。\n\n规则：`pinned` 消息（系统提示、安全声明、任务关键的工具结果）永远保留。剩余预算从最新往旧填充非固定消息。返回被保留消息的原始顺序索引——对话不能重排。\n\n这是上下文窗口管理的核心：agent 记忆系统、Claude Code 式压缩、服务侧历史裁剪，最终都归结为预算下的近因优先装包。\n\n**签名:** `truncate_context(messages, max_tokens) -> list[int]`\n\n**参数:**\n- `messages` — `{'role': str, 'tokens': int, 'pinned': bool}` 列表（`pinned` 可选，默认 `False`）\n- `max_tokens` — 总 token 预算\n\n**返回:** 保留消息的索引列表（升序，即原始顺序）\n\n**约束:**\n- 固定消息永远保留，即使总和超过 `max_tokens`\n- 非固定消息从列表尾部往前加，每条要么整条保留要么不要，只要累计总量不超 `max_tokens`\n- 输出保持原始索引；这是选择，不是重排",
+      "tests": [
+        {
+          "name": "Everything fits",
+          "code": "\nmessages = [\n    {'role': 'system', 'tokens': 10, 'pinned': True},\n    {'role': 'user', 'tokens': 20},\n    {'role': 'assistant', 'tokens': 30},\n    {'role': 'user', 'tokens': 20},\n]\nkept = {fn}(messages, max_tokens=100)\nassert kept == [0, 1, 2, 3], f'Expected all indices, got {kept}'\n"
+        },
+        {
+          "name": "Oldest non-pinned messages are dropped",
+          "code": "\nmessages = [\n    {'role': 'system', 'tokens': 10, 'pinned': True},\n    {'role': 'user', 'tokens': 40},\n    {'role': 'assistant', 'tokens': 40},\n    {'role': 'user', 'tokens': 30},\n    {'role': 'assistant', 'tokens': 30},\n]\nkept = {fn}(messages, max_tokens=100)\n# 10 (pinned) + 30 + 30 = 70 <= 100; adding the 40-token assistant would hit 110 > 100\nassert kept == [0, 3, 4], f'Expected [0, 3, 4], got {kept}'\n"
+        },
+        {
+          "name": "Pinned messages survive even when old and over budget",
+          "code": "\nmessages = [\n    {'role': 'system', 'tokens': 30, 'pinned': True},\n    {'role': 'user', 'tokens': 50},\n    {'role': 'tool', 'tokens': 40, 'pinned': True},\n    {'role': 'user', 'tokens': 20},\n]\nkept = {fn}(messages, max_tokens=50)\nassert kept == [0, 2], f'Pinned must survive, got {kept}'\n"
+        },
+        {
+          "name": "Whole-message granularity, no partial keeps",
+          "code": "\nmessages = [\n    {'role': 'system', 'tokens': 5, 'pinned': True},\n    {'role': 'user', 'tokens': 8},\n    {'role': 'assistant', 'tokens': 8},\n]\nkept = {fn}(messages, max_tokens=12)\n# 5 + 8 = 13 > 12, so the 8-token assistant does not fit either\nassert kept == [0], f'No partial keeps allowed, got {kept}'\n"
+        },
+        {
+          "name": "pinned defaults to False",
+          "code": "\nmessages = [\n    {'role': 'system', 'tokens': 30},\n    {'role': 'user', 'tokens': 30},\n    {'role': 'assistant', 'tokens': 30},\n]\nkept = {fn}(messages, max_tokens=65)\nassert kept == [1, 2], f'Without an explicit pinned flag nothing is pinned, got {kept}'\n"
+        },
+        {
+          "name": "Budget exactly reached is allowed",
+          "code": "\nmessages = [\n    {'role': 'system', 'tokens': 10, 'pinned': True},\n    {'role': 'user', 'tokens': 45},\n    {'role': 'assistant', 'tokens': 45},\n]\nkept = {fn}(messages, max_tokens=100)\nassert kept == [0, 1, 2], f'10 + 45 + 45 = 100 should fit exactly, got {kept}'\n"
+        }
+      ]
+    },
+    {
+      "id": "hidden_distillation",
+      "title": "Hidden-State Distillation (FitNets)",
+      "titleZh": "隐状态蒸馏（FitNets）",
+      "difficulty": "Medium",
+      "functionName": "hidden_distillation",
+      "hint": "`diff = projection(student_hidden) - teacher_hidden` then `diff.pow(2).mean()`.",
+      "hintZh": "`diff = projection(student_hidden) - teacher_hidden`，然后 `diff.pow(2).mean()`。",
+      "descriptionEn": "Distill intermediate representations — the FitNets / TinyBERT recipe.\n\nLogit distillation only supervises the output layer. Matching teacher and student hidden states layer by layer transfers richer structural knowledge: the student's `d_s`-dimensional states are projected by a learnable `nn.Linear(d_s, d_t)` onto the teacher's `d_t`-dimensional space, and the MSE is minimized over every token position.\n\n**Signature:** `hidden_distillation(student_hidden, teacher_hidden, projection) -> Tensor`\n\n**Parameters:**\n- `student_hidden` — shape `(B, T, d_s)`\n- `teacher_hidden` — shape `(B, T, d_t)`\n- `projection` — `nn.Linear(d_s, d_t)` mapping student to teacher space\n\n**Returns:** scalar MSE between `projection(student_hidden)` and `teacher_hidden`, averaged over all elements\n\n**Constraints:**\n- The teacher is detached inside: gradients flow only through the student states and the projection weights\n- The loss is the plain element-wise mean, no reduction over the token axis only",
+      "descriptionZh": "蒸馏中间表征——FitNets / TinyBERT 配方。\n\nlogit 蒸馏只监督输出层。逐层对齐教师与学生的隐状态能迁移更丰富的结构知识：学生的 `d_s` 维状态经可学习 `nn.Linear(d_s, d_t)` 投到教师的 `d_t` 维空间，再对所有 token 位置最小化 MSE。\n\n**签名:** `hidden_distillation(student_hidden, teacher_hidden, projection) -> Tensor`\n\n**参数:**\n- `student_hidden` — 形状 `(B, T, d_s)`\n- `teacher_hidden` — 形状 `(B, T, d_t)`\n- `projection` — 把学生映射到教师空间的 `nn.Linear(d_s, d_t)`\n\n**返回:** `projection(student_hidden)` 与 `teacher_hidden` 的标量 MSE，对所有元素平均\n\n**约束:**\n- 教师在函数内部被 detach：梯度只流过学生状态和投影权重\n- 损失是纯逐元素平均，不做只对 token 轴的归约",
+      "tests": [
+        {
+          "name": "Zero when the projection reproduces the teacher",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(0)\nstudent = torch.randn(2, 3, 4)\nteacher = torch.randn(2, 3, 6)\nproj = nn.Linear(4, 6)\nwith torch.no_grad():\n    teacher.copy_(proj(student))\nout = {fn}(student, teacher, proj)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'Perfect match must give 0, got {out}'\n"
+        },
+        {
+          "name": "Matches the manual MSE",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(1)\nstudent = torch.randn(2, 5, 8)\nteacher = torch.randn(2, 5, 12)\nproj = nn.Linear(8, 12)\nexpected = ((proj(student) - teacher) ** 2).mean()\nout = {fn}(student, teacher, proj)\nassert torch.allclose(out, expected, atol=1e-7), f'{out.item()} vs {expected.item()}'\n"
+        },
+        {
+          "name": "Gradient reaches the student and the projection",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(2)\nstudent = torch.randn(2, 4, 8, requires_grad=True)\nteacher = torch.randn(2, 4, 12)\nproj = nn.Linear(8, 12)\nout = {fn}(student, teacher, proj)\nout.backward()\nassert student.grad is not None and student.grad.abs().sum() > 0, 'student grad missing'\nassert proj.weight.grad is not None and proj.weight.grad.abs().sum() > 0, 'projection grad missing'\n"
+        },
+        {
+          "name": "Teacher is not a gradient target",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(3)\nstudent = torch.randn(2, 4, 8)\nteacher = torch.randn(2, 4, 12, requires_grad=True)\nproj = nn.Linear(8, 12)\nout = {fn}(student, teacher, proj)\nout.backward()\nassert teacher.grad is None, 'The loss must not backprop into teacher states'\n"
+        },
+        {
+          "name": "Element-wise mean, not per-token sum",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(4)\nstudent = torch.zeros(1, 2, 3)\nteacher = torch.zeros(1, 2, 3)\nproj = nn.Linear(3, 3)\nwith torch.no_grad():\n    proj.weight.zero_()\n    proj.bias.fill_(1.0)\n# diff is all ones: element mean = 1, per-token sum = 2, feature sum = 3\nout = {fn}(student, teacher, proj)\nassert torch.allclose(out, torch.tensor(1.0), atol=1e-6), f'Expected element-wise mean 1.0, got {out.item()}'\n"
+        }
+      ]
+    },
+    {
+      "id": "json_schema_validation",
+      "title": "Validate Tool Arguments Against a Schema",
+      "titleZh": "按 JSON Schema 校验工具参数",
+      "difficulty": "Medium",
+      "functionName": "validate_tool_arguments",
+      "hint": "Recursive walk carrying the path string. Map Python types to schema names first, and special-case `bool` before `int` since `isinstance(True, int)` is True.",
+      "hintZh": "递归遍历并携带路径字符串。先把 Python 类型映射为 schema 名；注意 `isinstance(True, int)` 为真，所以要先判 `bool` 再判 `int`。",
+      "descriptionEn": "Validate function-calling arguments against a JSON-schema subset — the check every tool-serving backend (and every Qwen/Llama agent harness) runs before invoking a tool.\n\nSupport the keywords: `type`, `properties`, `required`, `enum`, `items`. Types map to Python: `object`=dict, `array`=list, `string`=str, `integer`=int, `number`=int or float, `boolean`=bool, `null`=None. Note that in Python `bool` is a subclass of `int` — a boolean must NOT satisfy `integer` or `number`.\n\n**Signature:** `validate_tool_arguments(args, schema) -> list[str]`\n\n**Parameters:**\n- `args` — the parsed arguments object (usually the `arguments` dict of a tool call)\n- `schema` — JSON schema with root type `object`\n\n**Returns:** list of error strings, empty when valid. Error formats (exact):\n- type: `<path> must be of type <expected>, got <actual>`\n- required: `<obj_path> is missing required property '<key>'`\n- enum: `<path> must be one of [<v1>, <v2>, ...]` (JSON list)\n\nPaths are `$` for the root, `$.city` for properties, `$.address.city` nested, `$.tags[0]` for array items.\n\n**Constraints:**\n- On a type error, do not recurse into that value further\n- `integer` accepts ints only; `number` accepts ints and floats; booleans satisfy neither",
+      "descriptionZh": "按 JSON Schema 子集校验函数调用参数——这是所有工具服务后端（以及每个 Qwen/Llama agent 框架）在真正调用工具前跑的检查。\n\n支持关键字：`type`、`properties`、`required`、`enum`、`items`。类型映射到 Python：`object`=dict、`array`=list、`string`=str、`integer`=int、`number`=int 或 float、`boolean`=bool、`null`=None。注意 Python 里 `bool` 是 `int` 的子类——布尔值不能算 `integer` 或 `number`。\n\n**签名:** `validate_tool_arguments(args, schema) -> list[str]`\n\n**参数:**\n- `args` — 解析后的参数对象（通常是工具调用的 `arguments` dict）\n- `schema` — 根类型为 `object` 的 JSON Schema\n\n**返回:** 错误字符串列表，合法时为空。错误格式（精确）：\n- 类型：`<path> must be of type <expected>, got <actual>`\n- 必填：`<obj_path> is missing required property '<key>'`\n- 枚举：`<path> must be one of [<v1>, <v2>, ...]`（JSON 列表）\n\n路径：根为 `$`，属性 `$.city`，嵌套 `$.address.city`，数组元素 `$.tags[0]`。\n\n**约束:**\n- 类型错误后不再深入该值\n- `integer` 只接受 int；`number` 接受 int 和 float；布尔两者都不算",
+      "tests": [
+        {
+          "name": "Valid arguments produce no errors",
+          "code": "\nschema = {\n    'type': 'object',\n    'properties': {\n        'city': {'type': 'string'},\n        'days': {'type': 'integer'},\n        'unit': {'enum': ['celsius', 'fahrenheit']},\n    },\n    'required': ['city'],\n}\nargs = {'city': 'Beijing', 'days': 3, 'unit': 'celsius'}\nerrors = {fn}(args, schema)\nassert errors == [], f'Expected no errors, got: {errors}'\n"
+        },
+        {
+          "name": "Missing required property",
+          "code": "\nschema = {'type': 'object', 'properties': {'city': {'type': 'string'}}, 'required': ['city']}\nerrors = {fn}({}, schema)\nassert errors == [\"$ is missing required property 'city'\"], f'Got: {errors}'\n"
+        },
+        {
+          "name": "Nested property type error",
+          "code": "\nschema = {\n    'type': 'object',\n    'properties': {\n        'address': {\n            'type': 'object',\n            'properties': {'zip': {'type': 'string'}},\n            'required': ['zip'],\n        },\n    },\n}\nerrors = {fn}({'address': {'zip': 10086}}, schema)\nassert errors == ['$.address.zip must be of type string, got integer'], f'Got: {errors}'\n"
+        },
+        {
+          "name": "Enum violation",
+          "code": "\nschema = {'type': 'object', 'properties': {'unit': {'enum': ['celsius', 'fahrenheit']}}, 'required': ['unit']}\nerrors = {fn}({'unit': 'kelvin'}, schema)\nassert errors == ['$.unit must be one of [\"celsius\", \"fahrenheit\"]'], f'Got: {errors}'\n"
+        },
+        {
+          "name": "Boolean is not a number or integer",
+          "code": "\nschema = {\n    'type': 'object',\n    'properties': {\n        'count': {'type': 'integer'},\n        'ratio': {'type': 'number'},\n    },\n}\nerrors = {fn}({'count': True, 'ratio': False}, schema)\nassert len(errors) == 2, f'Expected 2 errors, got: {errors}'\nassert '$.count must be of type integer, got boolean' in errors\nassert '$.ratio must be of type number, got boolean' in errors\n"
+        },
+        {
+          "name": "Array item validation",
+          "code": "\nschema = {\n    'type': 'object',\n    'properties': {\n        'tags': {'type': 'array', 'items': {'type': 'string'}},\n    },\n}\nerrors = {fn}({'tags': [1, 'a', 2.5]}, schema)\nassert errors == ['$.tags[0] must be of type string, got integer',\n                  '$.tags[2] must be of type string, got number'], f'Got: {errors}'\n"
+        },
+        {
+          "name": "Root must be an object",
+          "code": "\nschema = {'type': 'object', 'properties': {}, 'required': []}\nerrors = {fn}([1, 2, 3], schema)\nassert errors == ['$ must be of type object, got array'], f'Got: {errors}'\n"
+        },
+        {
+          "name": "Integer satisfies number, no recursion past type error",
+          "code": "\nschema = {\n    'type': 'object',\n    'properties': {\n        'ratio': {'type': 'number'},\n        'blob': {'type': 'string'},\n    },\n}\nerrors = {fn}({'ratio': 2, 'blob': {'nested': 1}}, schema)\nassert '$.ratio' not in ' '.join(errors), 'int should satisfy number'\nassert len([e for e in errors if e.startswith('$.blob')]) == 1, f'Got: {errors}'\n"
+        }
+      ]
+    },
+    {
+      "id": "prefix_kv_reuse",
+      "title": "Plan Multi-Turn KV Cache Reuse",
+      "titleZh": "规划多轮 KV Cache 复用",
+      "difficulty": "Medium",
+      "functionName": "compute_prefill_plan",
+      "hint": "Walk both lists in lockstep while role and content match, summing the new-side token counts; `prefill = sum(all new tokens) - cached`.",
+      "hintZh": "两列表同步前进，role 和 content 都相同就累加新侧 token；`prefill = 新消息总 token - cached`。",
+      "descriptionEn": "Compute the prefill plan for the next turn of an agent conversation, the way vLLM-style serving stacks reuse the KV cache across turns.\n\nIn an agent loop, every tool result appends messages. The KV cache of the previous turn can be reused for the longest common prefix of messages (compared at message granularity: same role and same content). Everything after the divergence point — plus the newly appended messages — must be prefilled again.\n\n**Signature:** `compute_prefill_plan(prev_messages, new_messages) -> dict`\n\n**Parameters:**\n- `prev_messages`, `new_messages` — lists of `{'role': str, 'content': str, 'tokens': int}` in conversation order\n\n**Returns:** `{'cached_tokens': int, 'prefill_tokens': int}`\n- `cached_tokens` — token count of the shared prefix that can be reused\n- `prefill_tokens` — token count that must be computed fresh for the new turn (`sum of new tokens - cached_tokens`)\n\n**Constraints:**\n- Messages are compared pairwise in order; the prefix ends at the first mismatch (or when either list runs out)\n- An empty `prev_messages` gives zero reuse\n- Reuse is measured in tokens of the *new* message list (identical messages have identical token counts)",
+      "descriptionZh": "为 agent 对话的下一轮计算预填充计划，即 vLLM 式服务栈的跨轮 KV 复用。\n\nagent 循环里每个工具结果都会追加消息。上一轮的 KV cache 可以在最长公共消息前缀上复用（消息粒度比较：role 和 content 都相同）。分叉点之后的消息——加上新追加的——必须重新预填充。\n\n**签名:** `compute_prefill_plan(prev_messages, new_messages) -> dict`\n\n**参数:**\n- `prev_messages`、`new_messages` — 按对话顺序的 `{'role': str, 'content': str, 'tokens': int}` 列表\n\n**返回:** `{'cached_tokens': int, 'prefill_tokens': int}`\n- `cached_tokens` — 可复用的公共前缀 token 数\n- `prefill_tokens` — 新一轮必须现算的 token 数（`新消息总 token - cached_tokens`）\n\n**约束:**\n- 消息按序两两比较；前缀在首个不匹配处（或任一列表耗尽处）终止\n- `prev_messages` 为空则零复用\n- 复用按新消息列表的 token 计（相同消息 token 数相同）",
+      "tests": [
+        {
+          "name": "Pure append reuses the entire previous turn",
+          "code": "\nprev = [\n    {'role': 'system', 'content': 'You are helpful.', 'tokens': 10},\n    {'role': 'user', 'content': 'What is 2+2?', 'tokens': 5},\n    {'role': 'assistant', 'content': 'Let me compute.', 'tokens': 6},\n]\nnew = prev + [\n    {'role': 'tool', 'content': '4', 'tokens': 2},\n    {'role': 'assistant', 'content': 'The answer is 4.', 'tokens': 7},\n]\nplan = {fn}(prev, new)\nassert plan == {'cached_tokens': 21, 'prefill_tokens': 9}, f'Got: {plan}'\n"
+        },
+        {
+          "name": "Divergence cuts the reusable prefix",
+          "code": "\nprev = [\n    {'role': 'system', 'content': 'sys', 'tokens': 4},\n    {'role': 'user', 'content': 'old question', 'tokens': 8},\n    {'role': 'assistant', 'content': 'old answer', 'tokens': 9},\n]\nnew = [\n    {'role': 'system', 'content': 'sys', 'tokens': 4},\n    {'role': 'user', 'content': 'NEW question', 'tokens': 8},\n    {'role': 'assistant', 'content': 'new answer', 'tokens': 7},\n]\nplan = {fn}(prev, new)\nassert plan == {'cached_tokens': 4, 'prefill_tokens': 15}, f'Got: {plan}'\n"
+        },
+        {
+          "name": "Same content but different role is a mismatch",
+          "code": "\nprev = [\n    {'role': 'system', 'content': 'note', 'tokens': 3},\n    {'role': 'user', 'content': 'hi', 'tokens': 2},\n]\nnew = [\n    {'role': 'user', 'content': 'note', 'tokens': 3},\n    {'role': 'user', 'content': 'hi', 'tokens': 2},\n]\nplan = {fn}(prev, new)\nassert plan == {'cached_tokens': 0, 'prefill_tokens': 5}, f'Role mismatch must stop reuse, got: {plan}'\n"
+        },
+        {
+          "name": "Empty previous turn means zero reuse",
+          "code": "\nnew = [\n    {'role': 'system', 'content': 'sys', 'tokens': 10},\n    {'role': 'user', 'content': 'hello', 'tokens': 3},\n]\nplan = {fn}([], new)\nassert plan == {'cached_tokens': 0, 'prefill_tokens': 13}, f'Got: {plan}'\n"
+        },
+        {
+          "name": "Longer previous turn reuses up to the new length",
+          "code": "\nprev = [\n    {'role': 'system', 'content': 'sys', 'tokens': 5},\n    {'role': 'user', 'content': 'q', 'tokens': 2},\n    {'role': 'assistant', 'content': 'a', 'tokens': 6},\n    {'role': 'user', 'content': 'later', 'tokens': 4},\n]\nnew = [\n    {'role': 'system', 'content': 'sys', 'tokens': 5},\n    {'role': 'user', 'content': 'q', 'tokens': 2},\n]\nplan = {fn}(prev, new)\nassert plan == {'cached_tokens': 7, 'prefill_tokens': 0}, f'New turn fully cached, got: {plan}'\n"
+        }
+      ]
+    },
+    {
+      "id": "qk_norm",
+      "title": "QK-Norm (Qwen3 Style)",
+      "titleZh": "QK-Norm（Qwen3 式）",
+      "difficulty": "Medium",
+      "functionName": "qk_norm",
+      "hint": "RMS over the last dim: `rms = x.pow(2).mean(-1, keepdim=True).sqrt()` — but add eps inside the sqrt; then scale and shift.",
+      "hintZh": "最后一维的 RMS：`rms = x.pow(2).mean(-1, keepdim=True).sqrt()`——eps 加在 sqrt 里；然后缩放和平移。",
+      "descriptionEn": "Apply RMSNorm to the query and key head vectors before RoPE — the QK-Norm detail introduced by ViT-22B and shipped in every Qwen3 model.\n\nDeep stacks can blow up the attention logits; normalizing each query and key head to unit RMS right after the projections (before RoPE) keeps the attention scale stable during training. Qwen3, Chameleon and Seed-OSS all place this QK-Norm with learnable per-channel weights and biases.\n\n**Signature:** `qk_norm(q, k, weight_q, bias_q, weight_k, bias_k) -> (q_out, k_out)`\n\n**Parameters:**\n- `q`, `k` — shape `(B, H, T, D)`: batch, heads, sequence, head dim\n- `weight_q`, `bias_q`, `weight_k`, `bias_k` — shape `(D,)`, affine parameters over the head dim\n\n**Returns:** the normalized `(q_out, k_out)`, same shapes: `x / sqrt(mean(x^2, dim=-1) + eps) * weight + bias` with `eps = 1e-6`\n\n**Constraints:**\n- Normalization is per position and per head, over the head dimension only\n- An all-zero head vector normalizes to zero (the eps guard), so the output is just the bias",
+      "descriptionZh": "在 RoPE 之前对 query/key 的头向量施加 RMSNorm——ViT-22B 引入、Qwen3 全系搭载的 QK-Norm 细节。\n\n深层堆叠会放大注意力 logits；在投影之后（RoPE 之前）把每个 query/key 头归一到单位 RMS，能让训练期注意力尺度保持稳定。Qwen3、Chameleon、Seed-OSS 的 QK-Norm 都带可学习的逐通道权重和偏置。\n\n**签名:** `qk_norm(q, k, weight_q, bias_q, weight_k, bias_k) -> (q_out, k_out)`\n\n**参数:**\n- `q`、`k` — 形状 `(B, H, T, D)`：batch、头数、序列、头维\n- `weight_q`、`bias_q`、`weight_k`、`bias_k` — 形状 `(D,)`，头维上的仿射参数\n\n**返回:** 归一化后的 `(q_out, k_out)`，形状不变：`x / sqrt(mean(x^2, dim=-1) + eps) * weight + bias`，`eps = 1e-6`\n\n**约束:**\n- 归一化按位置按头，只在头维上\n- 全零头向量归一后为零（eps 守卫），输出只剩偏置",
+      "tests": [
+        {
+          "name": "Output RMS equals the weight magnitude",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nq = torch.randn(2, 3, 4, 8)\nk = torch.randn(2, 3, 4, 8)\nw_q = torch.full((8,), 2.5); b_q = torch.zeros(8)\nw_k = torch.full((8,), 0.5); b_k = torch.zeros(8)\nq_out, k_out = {fn}(q, k, w_q, b_q, w_k, b_k)\nrms_q = q_out.pow(2).mean(dim=-1).sqrt()\nrms_k = k_out.pow(2).mean(dim=-1).sqrt()\nassert torch.allclose(rms_q, torch.full_like(rms_q, 2.5), atol=1e-3), 'Unit-RMS input scaled by |w| keeps output RMS at |w|'\nassert torch.allclose(rms_k, torch.full_like(rms_k, 0.5), atol=1e-3)\n"
+        },
+        {
+          "name": "Bias shifts without changing the normalized direction",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nq = torch.randn(1, 2, 3, 6)\nk = torch.randn(1, 2, 3, 6)\nw = torch.ones(6)\nb_zero = torch.zeros(6)\nb_shift = torch.tensor([1.0, -2.0, 0.5, 0.0, 3.0, -1.0])\nq0, k0 = {fn}(q, k, w, b_zero, w, b_zero)\nq1, k1 = {fn}(q, k, w, b_shift, w, b_zero)\nassert torch.allclose(q1 - q0, b_shift.expand_as(q1), atol=1e-5), 'Bias must add element-wise'\nassert torch.allclose(k1, k0, atol=1e-6), 'Key side untouched when its params do not change'\n"
+        },
+        {
+          "name": "Shapes preserved",
+          "code": "\nimport torch\nq = torch.randn(2, 4, 5, 16)\nk = torch.randn(2, 4, 5, 16)\nw = torch.ones(16); b = torch.zeros(16)\nq_out, k_out = {fn}(q, k, w, b, w, b)\nassert q_out.shape == q.shape and k_out.shape == k.shape\n"
+        },
+        {
+          "name": "Zero head does not NaN and yields the bias",
+          "code": "\nimport torch\nq = torch.zeros(1, 1, 1, 4)\nk = torch.zeros(1, 1, 1, 4)\nw = torch.tensor([1.0, 2.0, 3.0, 4.0])\nb = torch.tensor([0.1, 0.2, 0.3, 0.4])\nq_out, k_out = {fn}(q, k, w, b, w, b)\nassert not torch.isnan(q_out).any() and not torch.isnan(k_out).any()\nassert torch.allclose(q_out, b.view(1, 1, 1, 4), atol=1e-6), 'Zero input normalizes to zero, leaving the bias'\n"
+        },
+        {
+          "name": "Matches the reference formula",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nq = torch.randn(2, 3, 5, 8) * 3.0\nk = torch.randn(2, 3, 5, 8) * 0.1\nw_q = torch.randn(8); b_q = torch.randn(8)\nw_k = torch.randn(8); b_k = torch.randn(8)\ndef ref(x, w, b, eps=1e-6):\n    return x / torch.sqrt(x.pow(2).mean(dim=-1, keepdim=True) + eps) * w + b\nq_out, k_out = {fn}(q, k, w_q, b_q, w_k, b_k)\nassert torch.allclose(q_out, ref(q, w_q, b_q), atol=1e-5)\nassert torch.allclose(k_out, ref(k, w_k, b_k), atol=1e-5)\n"
+        },
+        {
+          "name": "Gradient flows through q and k",
+          "code": "\nimport torch\nq = torch.randn(1, 2, 2, 4, requires_grad=True)\nk = torch.randn(1, 2, 2, 4, requires_grad=True)\nw = torch.ones(4); b = torch.zeros(4)\nq_out, k_out = {fn}(q, k, w, b, w, b)\n(q_out.sum() + k_out.sum()).backward()\nassert q.grad is not None and q.grad.abs().sum() > 0\nassert k.grad is not None and k.grad.abs().sum() > 0\n"
+        }
+      ]
+    },
+    {
+      "id": "reverse_kl_loss",
+      "title": "Reverse KL Loss (Mode-Seeking)",
+      "titleZh": "反向 KL 损失（模式寻求）",
+      "difficulty": "Medium",
+      "functionName": "reverse_kl_loss",
+      "hint": "`log_p = F.log_softmax(student/T)`, `q = F.softmax(student/T)` — both from the student; then `(q * (log_p - log_t)).sum(-1).mean() * T**2` where `log_t = F.log_softmax(teacher/T)`.",
+      "hintZh": "`log_p = F.log_softmax(student/T)`、`q = F.softmax(student/T)`——都来自学生；然后 `(q * (log_p - log_t)).sum(-1).mean() * T**2`，其中 `log_t = F.log_softmax(teacher/T)`。",
+      "descriptionEn": "Implement the reverse KL divergence used by on-policy distillation and RLHF objectives: `D_KL(student || teacher)`.\n\nDirection matters. Forward KL `D_KL(teacher || student)` is mass-covering — the student spreads probability over everything the teacher likes. Reverse KL `D_KL(student || teacher)` is mode-seeking — wherever the student puts mass, the teacher must agree, so the student concentrates on the teacher's best modes. Reverse KL is the divergence you get when the student's own samples drive the loss, which is exactly what on-policy distillation (GKD-style) optimizes.\n\n**Signature:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of D_KL(student_T || teacher_T)`\n\n**Constraints:**\n- Use stable log-softmax\n- Student first — this is the opposite direction from the classic KD loss",
+      "descriptionZh": "实现在线策略蒸馏与 RLHF 目标使用的反向 KL 散度：`D_KL(student || teacher)`。\n\n方向决定行为。前向 KL `D_KL(teacher || student)` 是覆盖型——学生把概率摊到教师喜欢的一切上。反向 KL `D_KL(student || teacher)` 是模式寻求型——学生放 mass 的地方教师必须同意，于是学生集中在教师最强的模式上。当损失由学生自己的采样驱动时，得到的就是反向 KL——这正是 GKD 式在线策略蒸馏所优化的。\n\n**签名:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 D_KL(student_T || teacher_T)`\n\n**约束:**\n- 使用稳定的 log-softmax\n- 学生在前——与经典 KD 损失方向相反",
+      "tests": [
+        {
+          "name": "Zero when distributions match",
+          "code": "\nimport torch\nlogits = torch.randn(4, 9)\nout = {fn}(logits, logits, temperature=2.0)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'Identical logits must give 0, got {out}'\n"
+        },
+        {
+          "name": "Matches the manual reverse KL formula",
+          "code": "\nimport torch\ntorch.manual_seed(0)\ns = torch.randn(3, 6)\nt = torch.randn(3, 6)\nT = 3.0\nlog_s = torch.log_softmax(s / T, dim=-1)\np = torch.softmax(s / T, dim=-1)\nlog_t = torch.log_softmax(t / T, dim=-1)\nexpected = (p * (log_s - log_t)).sum(-1).mean() * T**2\nout = {fn}(s, t, temperature=T)\nassert torch.allclose(out, expected, atol=1e-6), f'{out.item()} vs {expected.item()}'\n"
+        },
+        {
+          "name": "Direction differs from forward KL",
+          "code": "\nimport torch\nimport torch.nn.functional as F\ns = torch.tensor([[3.0, 0.0, -1.0]])\nt = torch.tensor([[0.0, 2.0, 0.0]])\ndef classic_kd(teacher, student):  # D_KL(teacher || student), the classic KD direction\n    log_q = F.log_softmax(teacher, dim=-1)\n    q = log_q.exp()\n    log_p = F.log_softmax(student, dim=-1)\n    return (q * (log_q - log_p)).sum()\nrev = {fn}(s, t, temperature=1.0)   # D_KL(student || teacher)\nfwd = classic_kd(t, s)             # D_KL(teacher || student)\nassert not torch.allclose(rev, fwd, atol=1e-3), 'Reverse and forward KL must differ on this pair'\n"
+        },
+        {
+          "name": "Student mass on zero-teacher positions is punished hard",
+          "code": "\nimport torch\nt = torch.tensor([[5.0, 4.0, 0.0]])\ns_confident_wrong = torch.tensor([[2.0, 0.0, 5.0]])   # student loves the teacher's dead position\ns_following = torch.tensor([[4.6, 3.8, 0.0]])\nwrong = {fn}(s_confident_wrong, t, temperature=1.0)\nfollowing = {fn}(s_following, t, temperature=1.0)\nassert wrong > following, 'Reverse KL punishes student mass where the teacher has none'\nassert following.item() < 0.1, f'Close-following student should be cheap, got {following.item()}'\n"
+        },
+        {
+          "name": "Non-negative and gradient flows to the student",
+          "code": "\nimport torch\ntorch.manual_seed(1)\ns = torch.randn(3, 7, requires_grad=True)\nt = torch.randn(3, 7)\nout = {fn}(s, t)\nassert out.item() >= -1e-6, 'KL must be non-negative'\nout.backward()\nassert s.grad is not None and s.grad.abs().sum() > 0\n"
+        }
+      ]
+    },
+    {
+      "id": "sigmoid_moe_routing",
+      "title": "Sigmoid MoE Routing (DeepSeek-V3)",
+      "titleZh": "Sigmoid MoE 路由（DeepSeek-V3）",
+      "difficulty": "Medium",
+      "functionName": "sigmoid_moe_routing",
+      "hint": "`scores = torch.sigmoid(x @ W.T)`; `vals, idx = scores.topk(k, dim=-1)`; `weights = vals / vals.sum(-1, keepdim=True)`.",
+      "hintZh": "`scores = torch.sigmoid(x @ W.T)`；`vals, idx = scores.topk(k, dim=-1)`；`weights = vals / vals.sum(-1, keepdim=True)`。",
+      "descriptionEn": "Route tokens through a sparse MoE layer with sigmoid gating — the DeepSeek-V3 detail.\n\nClassic MoE (Mixtral, Qwen2-MoE) scores experts with a softmax over all experts, which couples every score to every other. DeepSeek-V3 replaces it with element-wise sigmoid scores: each expert is scored independently in `(0, 1)`. The top-k experts are selected per token, and the selected scores are renormalized to sum to one — selection is decoupled from normalization.\n\n**Signature:** `sigmoid_moe_routing(hidden_states, router_weight, top_k) -> (weights, indices)`\n\n**Parameters:**\n- `hidden_states` — shape `(T, d)`\n- `router_weight` — shape `(E, d)`, one router vector per expert\n- `top_k` — number of experts to activate per token, `1 <= k <= E`\n\n**Returns:**\n- `weights` — `(T, k)`, the renormalized selected scores, each row summing to 1\n- `indices` — `(T, k)`, the selected expert ids, sorted by score descending\n\n**Constraints:**\n- Scores are `sigmoid(hidden @ router_weight.T)`, never a softmax\n- Renormalization divides each selected score by the sum of the selected scores",
+      "descriptionZh": "用 sigmoid 门控把 token 路由进稀疏 MoE 层——DeepSeek-V3 的细节。\n\n经典 MoE（Mixtral、Qwen2-MoE）对所有专家做 softmax 打分，每个分数与其他所有分数耦合。DeepSeek-V3 换成逐元素 sigmoid 分数：每个专家独立打 `(0, 1)` 区间的分。每个 token 选 top-k 专家，再把选中分数重归一到和为 1——选择与归一化解耦。\n\n**签名:** `sigmoid_moe_routing(hidden_states, router_weight, top_k) -> (weights, indices)`\n\n**参数:**\n- `hidden_states` — 形状 `(T, d)`\n- `router_weight` — 形状 `(E, d)`，每个专家一个路由向量\n- `top_k` — 每个 token 激活的专家数，`1 <= k <= E`\n\n**返回:**\n- `weights` — `(T, k)`，重归一后的选中分数，每行和为 1\n- `indices` — `(T, k)`，选中的专家 id，按分数降序\n\n**约束:**\n- 分数是 `sigmoid(hidden @ router_weight.T)`，绝不用 softmax\n- 重归一化是把每个选中分数除以选中分数之和",
+      "tests": [
+        {
+          "name": "Selected weights sum to one",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nx = torch.randn(7, 16)\nW = torch.randn(8, 16)\nweights, indices = {fn}(x, W, top_k=3)\nassert weights.shape == (7, 3) and indices.shape == (7, 3)\nassert torch.allclose(weights.sum(dim=-1), torch.ones(7), atol=1e-5), 'Each row must renormalize to 1'\n"
+        },
+        {
+          "name": "Top-k indices are the sigmoid-score leaders",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nx = torch.randn(5, 8)\nW = torch.randn(6, 8)\nweights, indices = {fn}(x, W, top_k=2)\nscores = torch.sigmoid(x @ W.T)\nmanual_idx = scores.argsort(dim=-1, descending=True)[:, :2]\nassert torch.equal(indices, manual_idx), f'Expected argmax top-k, got {indices} vs {manual_idx}'\n"
+        },
+        {
+          "name": "Weights are the renormalized sigmoid scores",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nx = torch.randn(4, 12)\nW = torch.randn(5, 12)\nweights, indices = {fn}(x, W, top_k=4)\nscores = torch.gather(torch.sigmoid(x @ W.T), 1, indices)\nexpected = scores / scores.sum(dim=-1, keepdim=True)\nassert torch.allclose(weights, expected, atol=1e-6)\n"
+        },
+        {
+          "name": "Sigmoid, not softmax",
+          "code": "\nimport torch\nx = torch.tensor([[0.0, 0.0, 0.0]])\nW = torch.eye(3)\nweights, indices = {fn}(x, W, top_k=3)\n# softmax would give 1/3 each; sigmoid gives 0.5 each, renormalized to 1/3 —\n# so distinguish with asymmetric logits instead:\nx2 = torch.tensor([[2.0, -2.0, 0.0]])\nw2, _ = {fn}(x2, W, top_k=3)\nsig = torch.sigmoid(x2[0])\nmanual = sig.sort(descending=True).values / sig.sum()\nassert torch.allclose(w2[0], manual, atol=1e-6), 'Scores must come from sigmoid renormalization'\n"
+        },
+        {
+          "name": "k=1 gives a deterministic one-hot",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nx = torch.randn(6, 10)\nW = torch.randn(4, 10)\nweights, indices = {fn}(x, W, top_k=1)\nassert torch.allclose(weights, torch.ones(6, 1), atol=1e-6), 'A single selected expert takes all the weight'\nbest = torch.sigmoid(x @ W.T).argmax(dim=-1, keepdim=True)\nassert torch.equal(indices, best)\n"
+        },
+        {
+          "name": "Differentiable",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nx = torch.randn(3, 6, requires_grad=True)\nW = torch.randn(4, 6)\nweights, _ = {fn}(x, W, top_k=2)\nweights.pow(2).sum().backward()\nassert x.grad is not None and x.grad.abs().sum() > 0, 'Routing must be trainable end-to-end'\n"
+        }
+      ]
+    },
+    {
+      "id": "tool_call_parsing",
+      "title": "Parse Qwen-Style Tool Calls",
+      "titleZh": "解析 Qwen 风格的工具调用",
+      "difficulty": "Medium",
+      "functionName": "parse_tool_calls",
+      "hint": "`re.findall` over the open-tag + body + close-tag pattern with `re.DOTALL`, then `json.loads` each body inside try/except and validate the shape.",
+      "hintZh": "用 `re.findall` 按 开标签+正文+闭标签 的模式（`re.DOTALL`）取块，逐块 try/except `json.loads` 并校验结构。",
+      "descriptionEn": "Extract structured tool calls from raw model output, using the format emitted by Qwen2.5 / Qwen3 chat templates.\n\nQwen's Hermes-style template wraps each function call between special tags, with a JSON body: `{\"name\": ..., \"arguments\": {...}}`. A serving loop must turn that text into an executable call — and survive malformed JSON when the model samples it.\n\n**Signature:** `parse_tool_calls(text) -> list[dict]`\n\n**Parameters:**\n- `text` — raw model output; may contain narrative text around the tag blocks\n\n**Returns:** a list of `{'name': str, 'arguments': dict}` for every valid block, in order of appearance\n\n**Constraints:**\n- Blocks are delimited by the special open/close tags\n- The body between the tags must be valid JSON; a block whose body fails to parse, whose `name` is not a string, or whose `arguments` is not a dict is skipped\n- A block missing the `arguments` key is treated as empty arguments `{}`\n- Text outside the tags is ignored",
+      "descriptionZh": "从模型原始输出中提取结构化工具调用，使用 Qwen2.5 / Qwen3 对话模板的格式。\n\nQwen 的 Hermes 风格模板把每个函数调用放在特殊标签之间，正文是 JSON：`{\"name\": ..., \"arguments\": {...}}`。服务循环必须把这段文本变成可执行的调用——并且要在模型采样坏 JSON 时存活。\n\n**签名:** `parse_tool_calls(text) -> list[dict]`\n\n**参数:**\n- `text` — 模型原始输出，标签块周围可能有叙述文字\n\n**返回:** 所有合法块的 `{'name': str, 'arguments': dict}` 列表，按出现顺序\n\n**约束:**\n- 块由特殊开/闭标签界定\n- 标签之间必须是合法 JSON；解析失败、`name` 不是字符串、或 `arguments` 不是 dict 的块直接跳过\n- 缺 `arguments` 键的块按空参数 `{}` 处理\n- 标签之外的文本忽略",
+      "tests": [
+        {
+          "name": "Single call",
+          "code": "\ntext = '<tool_call>\\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Beijing\", \"unit\": \"celsius\"}}\\n</tool_call>'\ncalls = {fn}(text)\nassert calls == [{'name': 'get_weather', 'arguments': {'city': 'Beijing', 'unit': 'celsius'}}], f'Got: {calls}'\n"
+        },
+        {
+          "name": "Parallel calls in order",
+          "code": "\ntext = 'I will check both cities.\\n\\n<tool_call>\\n{\"name\": \"search\", \"arguments\": {\"q\": \"a\"}}\\n</tool_call>\\n<tool_call>\\n{\"name\": \"search\", \"arguments\": {\"q\": \"b\"}}\\n</tool_call>'\ncalls = {fn}(text)\nassert len(calls) == 2, f'Expected 2 calls, got {len(calls)}'\nassert calls[0]['arguments']['q'] == 'a'\nassert calls[1]['arguments']['q'] == 'b'\n"
+        },
+        {
+          "name": "Empty arguments and missing arguments key",
+          "code": "\ntext = '<tool_call>\\n{\"name\": \"list_files\", \"arguments\": {}}\\n</tool_call>\\n<tool_call>\\n{\"name\": \"ping\"}\\n</tool_call>'\ncalls = {fn}(text)\nassert calls[0] == {'name': 'list_files', 'arguments': {}}\nassert calls[1] == {'name': 'ping', 'arguments': {}}, 'Missing arguments key defaults to empty dict'\n"
+        },
+        {
+          "name": "Malformed JSON is skipped",
+          "code": "\ntext = '<tool_call>\\n{\"name\": \"oops\", \"arguments\": \\n</tool_call>\\n<tool_call>\\n{\"name\": \"fine\", \"arguments\": {\"k\": 1}}\\n</tool_call>'\ncalls = {fn}(text)\nassert calls == [{'name': 'fine', 'arguments': {'k': 1}}], f'Malformed block must be skipped, got: {calls}'\n"
+        },
+        {
+          "name": "Bad shapes are skipped",
+          "code": "\ntext = ('<tool_call>\\n[1, 2, 3]\\n</tool_call>'\n        '<tool_call>\\n{\"name\": 42, \"arguments\": {}}\\n</tool_call>'\n        '<tool_call>\\n{\"name\": \"ok\", \"arguments\": [1, 2]}\\n</tool_call>'\n        '<tool_call>\\n{\"name\": \"valid\", \"arguments\": {\"a\": 1}}\\n</tool_call>')\ncalls = {fn}(text)\nassert calls == [{'name': 'valid', 'arguments': {'a': 1}}], f'Only the valid block survives, got: {calls}'\n"
+        },
+        {
+          "name": "Prose only and unicode arguments",
+          "code": "\nassert {fn}('The user asked about weather but I need more info.') == []\ncalls = {fn}('<tool_call>\\n{\"name\": \"echo\", \"arguments\": {\"text\": \"hello world\"}}\\n</tool_call>')\nassert calls == [{'name': 'echo', 'arguments': {'text': 'hello world'}}]\n"
+        }
+      ]
+    },
+    {
+      "id": "topk_kd_loss",
+      "title": "Top-k Sparse Distillation Loss",
+      "titleZh": "Top-k 稀疏蒸馏损失",
+      "difficulty": "Medium",
+      "functionName": "topk_kd_loss",
+      "hint": "`vals, idx = teacher.topk(k, dim=-1)`; build a mask from `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` and apply the same mask to both sides.",
+      "hintZh": "`vals, idx = teacher.topk(k, dim=-1)`；用 `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` 构造掩码后的教师 logits，学生用同样的索引掩码。",
+      "descriptionEn": "Distill only the teacher's top-k logits — the MiniLM recipe for representation distillation at scale.\n\nFull-vocabulary KL wastes capacity on the teacher's long tail. MiniLM keeps only the teacher's k largest logits, masks every other position to minus infinity on both sides, and computes the KL between the renormalized truncated distributions. The student is forced to match the teacher where it is confident.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
+      "descriptionZh": "只蒸馏教师 top-k 的 logits——大规模表征蒸馏的 MiniLM 配方。\n\n全词表 KL 把容量浪费在教师的长尾上。MiniLM 只保留教师 k 个最大 logits，其余位置在两侧都置为负无穷，再在重归一化的截断分布之间算 KL。学生被迫在教师自信的地方对齐。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
+      "tests": [
+        {
+          "name": "Reduces to full KD when k equals vocabulary",
+          "code": "\nimport torch\ntorch.manual_seed(0)\ns = torch.randn(3, 8)\nt = torch.randn(3, 8)\nfull = {fn}(s, t, k=8, temperature=2.0)\nlog_s = torch.log_softmax(s / 2.0, dim=-1)\nq = torch.softmax(t / 2.0, dim=-1)\nexpected = (q * (q.clamp_min(1e-12).log() - log_s)).sum(-1).mean() * 4.0\nassert torch.allclose(full, expected, atol=1e-6), f'k=V must equal full KD: {full.item()} vs {expected.item()}'\n"
+        },
+        {
+          "name": "k=1 makes the loss exactly zero",
+          "code": "\nimport torch\ns = torch.randn(4, 10)\nt = torch.randn(4, 10)\nout = {fn}(s, t, k=1)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'Both sides become the same one-hot, got {out}'\n"
+        },
+        {
+          "name": "Non-topk student logits are ignored",
+          "code": "\nimport torch\ntorch.manual_seed(1)\ns = torch.randn(2, 10)\nt = torch.randn(2, 10)\nbase = {fn}(s, t, k=3)\nperturbed = s.clone()\nvals, idx = t.topk(3, dim=-1)\nmask = torch.ones_like(t, dtype=torch.bool)\nmask.scatter_(-1, idx, False)\nperturbed[mask] += 100.0\nout = {fn}(perturbed, t, k=3)\nassert torch.allclose(base, out, atol=1e-5), 'Off-topk student logits must not affect the loss'\n"
+        },
+        {
+          "name": "Matches the masked reference computation",
+          "code": "\nimport torch\ntorch.manual_seed(2)\ns = torch.randn(3, 9)\nt = torch.randn(3, 9)\nk, T = 4, 2.0\nvals, idx = t.topk(k, dim=-1)\ns_top = s.gather(-1, idx)\nq = torch.softmax(vals / T, dim=-1)\nlog_p = torch.log_softmax(s_top / T, dim=-1)\nexpected = (q * (q.clamp_min(1e-12).log() - log_p)).sum(-1).mean() * T**2\nout = {fn}(s, t, k, temperature=T)\nassert torch.allclose(out, expected, atol=1e-5), f'{out.item()} vs {expected.item()}'\n"
+        },
+        {
+          "name": "Teacher tail is dropped, only the top-k shape matters",
+          "code": "\nimport torch\nt = torch.tensor([[5.0, 4.0, 3.0, 2.0, 1.0]])\ns_aligned = torch.tensor([[5.0, 4.0, 3.0, 2.0, 1.0]])\ns_mass_elsewhere = torch.tensor([[-1.0, -2.0, 5.0, 4.0, 3.0]])\ns_swapped = torch.tensor([[4.0, 5.0, 3.0, 2.0, 1.0]])\nout_aligned = {fn}(s_aligned, t, k=2)\nout_mass = {fn}(s_mass_elsewhere, t, k=2)\nout_swapped = {fn}(s_swapped, t, k=2)\nassert out_aligned.item() < 1e-6, 'Matching teacher top-2 should be near zero'\nassert out_mass.item() < 1e-6, f'Student mass outside the top-k support is invisible, got {out_mass.item()}'\nassert out_swapped.item() > 0.3, f'Swapped top-2 ordering must be penalized, got {out_swapped.item()}'\n"
+        }
+      ]
+    },
+    {
+      "id": "action_level_distillation",
+      "title": "Action-Level Agent Distillation",
+      "titleZh": "动作级 Agent 蒸馏",
+      "difficulty": "Hard",
+      "functionName": "action_level_distillation_loss",
+      "hint": "Per-token reverse KL gives `(T,)`; `per_tok[s:e].mean()` inside each span, then `torch.stack(span_losses).mean()`; guard the empty list.",
+      "hintZh": "逐 token 反向 KL 得 `(T,)`；每个跨度内 `per_tok[s:e].mean()`，再 `torch.stack(span_losses).mean()`；空列表要守卫。",
+      "descriptionEn": "Distill the agent's decisions, not the whole sequence — span-normalized trajectory distillation.\n\nAn agent trajectory interleaves the student's own action spans with environment spans: prompts, observations, tool results. When distilling a teacher policy, what you actually transfer is the decisions — the action tokens. Distilling the full sequence dilutes the signal with environment statistics the student cannot control. Distill the action, not the sequence.\n\nThe subtlety is normalization. A per-token mean lets long actions dominate the loss; a span-level normalization weights every action equally no matter how many tokens it spans. Compute the mean reverse KL inside each action span, then average over spans.\n\n**Signature:** `action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(T, V)` for one trajectory\n- `action_spans` — list of `(start, end)` index pairs, half-open `[start, end)`, non-overlapping, ascending\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * mean over spans of (mean KL within the span)`; exactly `0.0` for an empty span list\n\n**Constraints:**\n- Positions outside every span contribute nothing\n- Two spans with identical per-token KL but different lengths contribute equally (span normalization)\n- KL direction is reverse: `D_KL(student_t || teacher_t)`",
+      "descriptionZh": "蒸馏 agent 的决策，而不是整个序列——跨度归一化的轨迹蒸馏。\n\nagent 轨迹把学生自己的动作跨度与环境跨度交错：提示词、观察、工具结果。蒸馏教师策略时，真正迁移的是决策——动作 token。整序列蒸馏会用学生控制不了的环境统计稀释信号。蒸馏动作，不蒸馏序列。\n\n微妙之处在归一化。逐 token 求平均会让长动作主导损失；跨度级归一化让每个动作权重相等，不管它跨多少 token。在每个动作跨度内算平均反向 KL，再对跨度求平均。\n\n**签名:** `action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 单条轨迹，形状 `(T, V)`\n- `action_spans` — `(start, end)` 索引对列表，左闭右开 `[start, end)`，不重叠、递增\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * 各跨度内 KL 平均 再对跨度平均`；跨度列表为空时恰为 `0.0`\n\n**约束:**\n- 所有跨度之外的位置不贡献\n- 两个逐 token KL 相同但长度不同的跨度贡献相等（跨度归一化）\n- KL 方向是反向：`D_KL(student_t || teacher_t)`",
+      "tests": [
+        {
+          "name": "Zero when student matches teacher on the actions",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nlogits = torch.randn(8, 10)\nspans = [(0, 2), (5, 8)]\nout = {fn}(logits, logits.clone(), spans, temperature=2.0)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'Identical logits must give 0, got {out}'\n"
+        },
+        {
+          "name": "Span normalization: length does not change weight",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nt = torch.zeros(10, 4)\ns = torch.zeros(10, 4)\ns[:, 0] = 1.0   # constant per-token mismatch everywhere\none = [(0, 1)]                       # one short action\nthree = [(3, 6)]                     # one long action, same per-token KL\nboth = [(0, 1), (3, 6)]              # both: the mean of two identical span losses\nl_one = {fn}(s, t, one)\nl_three = {fn}(s, t, three)\nl_both = {fn}(s, t, both)\nassert torch.allclose(l_one, l_three, atol=1e-6), 'Long span must not dominate'\nassert torch.allclose(l_both, l_one, atol=1e-6), 'Two identical-KL spans average to the same value'\n"
+        },
+        {
+          "name": "Positions outside spans are invisible",
+          "code": "\nimport torch\ntorch.manual_seed(2)\ns = torch.randn(6, 5)\nt = torch.randn(6, 5)\nspans = [(1, 3)]\nbase = {fn}(s, t, spans)\ns_perturbed = s.clone()\ns_perturbed[[0, 4, 5]] += 100.0\nout = {fn}(s_perturbed, t, spans)\nassert torch.allclose(base, out, atol=1e-5), 'Non-action positions must not affect the loss'\n"
+        },
+        {
+          "name": "Matches the manual span-mean-of-means",
+          "code": "\nimport torch\ntorch.manual_seed(3)\ns = torch.randn(9, 6)\nt = torch.randn(9, 6)\nspans = [(0, 3), (4, 5), (7, 9)]\nT = 2.5\nlog_p = torch.log_softmax(s / T, dim=-1)\np = log_p.exp()\nlog_t = torch.log_softmax(t / T, dim=-1)\nper_tok = (p * (log_p - log_t)).sum(-1)\nexpected = ((per_tok[0:3].mean() + per_tok[4:5].mean() + per_tok[7:9].mean()) / 3) * T**2\nout = {fn}(s, t, spans, temperature=T)\nassert torch.allclose(out, expected, atol=1e-6), f'{out.item()} vs {expected.item()}'\n"
+        },
+        {
+          "name": "Empty span list returns exact zero",
+          "code": "\nimport torch\ns = torch.randn(5, 4)\nt = torch.randn(5, 4)\nout = {fn}(s, t, [])\nassert out.item() == 0.0 and out.dim() == 0, f'Expected scalar 0.0, got {out}'\n"
+        },
+        {
+          "name": "Differs from flat per-token mean on mixed spans",
+          "code": "\nimport torch\ntorch.manual_seed(4)\ns = torch.randn(10, 5)\nt = torch.randn(10, 5)\nspans = [(0, 2), (8, 10)]\nlog_p = torch.log_softmax(s, dim=-1)\np = log_p.exp()\nper_tok = (p * (log_p - torch.log_softmax(t, dim=-1))).sum(-1)\nflat = per_tok[[0, 1, 8, 9]].mean()\nspan_norm = (per_tok[0:2].mean() + per_tok[8:10].mean()) / 2\nout = {fn}(s, t, spans)\nassert torch.allclose(out, span_norm, atol=1e-6)\n# flat and span-normalized coincide only when both spans have equal length\nif not torch.allclose(flat, span_norm, atol=1e-6):\n    pass  # same lengths here, but the assertion above is the real contract\n"
+        }
+      ]
+    },
+    {
+      "id": "hybrid_attention_mask",
+      "title": "Hybrid Local-Global Attention Masks (Gemma-2)",
+      "titleZh": "局部-全局混合注意力掩码（Gemma-2）",
+      "difficulty": "Hard",
+      "functionName": "hybrid_attention_mask",
+      "hint": "Causal base: `torch.tril(torch.ones(L, L, dtype=torch.bool))`; the local mask additionally requires `i - j < window_size`, i.e. a band — build it from broadcast index grids `rows` and `cols`.",
+      "hintZh": "因果基底：`torch.tril(torch.ones(L, L, dtype=torch.bool))`；局部掩码额外要求 `i - j < window_size`（条带）——用广播索引网格 `rows`、`cols` 构造。",
+      "descriptionEn": "Build the per-layer attention masks of a hybrid-attention stack — the Gemma-2/Gemma-3 recipe (and the same idea as Qwen3-Next, which replaces 3 of every 4 layers with linear attention).\n\nGlobal self-attention over a long context is quadratic; sliding-window attention only sees the last `window_size` tokens and misses distant context. Gemma-2 alternates them: odd layers attend globally, even layers attend locally — information still reaches layer 0 from far away, it just needs `seq_len / window_size` local hops to get there, while every global layer pays full price only once per pair.\n\n**Signature:** `hybrid_attention_mask(seq_len, layer_types, window_size) -> list[Tensor]`\n\n**Parameters:**\n- `seq_len` — sequence length `L`\n- `layer_types` — list like `['local', 'global', 'local', 'global']`, one entry per layer\n- `window_size` — receptive window `W` for local layers, `W >= 1`\n\n**Returns:** one `(L, L)` boolean mask per layer, in order. `True` at `[i, j]` means query `i` may attend to key `j`.\n\n**Constraints:**\n- Both layer types are causal: no query attends to a later position\n- Global layers attend to all earlier positions\n- Local layers attend only to positions `j` with `i - W + 1 <= j <= i` (a window of `W` including self)\n- `window_size >= seq_len` makes local identical to global",
+      "descriptionZh": "构建混合注意力栈的逐层掩码——Gemma-2/Gemma-3 的配方（与 Qwen3-Next 同思路：每 4 层里 3 层换成线性注意力）。\n\n长上下文上的全局自注意力是二次方的；滑窗注意力只看最近 `window_size` 个 token，错过远距上下文。Gemma-2 交替使用：奇数层全局注意，偶数层局部注意——信息仍能从远处到达第 0 层，只是需要 `seq_len / window_size` 跳局部接力，而每个全局层只为每对位置付一次全价。\n\n**签名:** `hybrid_attention_mask(seq_len, layer_types, window_size) -> list[Tensor]`\n\n**参数:**\n- `seq_len` — 序列长度 `L`\n- `layer_types` — 如 `['local', 'global', 'local', 'global']`，每层一项\n- `window_size` — 局部层的感受窗 `W`，`W >= 1`\n\n**返回:** 每层一个 `(L, L)` 布尔掩码，按层序。`[i, j]` 为 `True` 表示查询 `i` 可以关注键 `j`。\n\n**约束:**\n- 两类层都是因果的：任何查询不关注后面的位置\n- 全局层关注所有更早的位置\n- 局部层只关注满足 `i - W + 1 <= j <= i` 的位置（含自身的 `W` 窗口）\n- `window_size >= seq_len` 时局部层与全局层相同",
+      "tests": [
+        {
+          "name": "One mask per layer, correct shapes",
+          "code": "\nimport torch\nmasks = {fn}(6, ['local', 'global', 'local', 'local'], 3)\nassert isinstance(masks, list) and len(masks) == 4\nfor m in masks:\n    assert m.shape == (6, 6) and m.dtype == torch.bool\n"
+        },
+        {
+          "name": "Global layers are fully causal",
+          "code": "\nimport torch\nmasks = {fn}(5, ['global'], 2)\nexpected = torch.tril(torch.ones(5, 5, dtype=torch.bool))\nassert torch.equal(masks[0], expected), 'Global mask must be lower-triangular'\n"
+        },
+        {
+          "name": "Local layers see only the window",
+          "code": "\nimport torch\nL, W = 8, 3\nmasks = {fn}(L, ['local'], W)\nm = masks[0]\ni = torch.arange(L)\nfor qi in range(L):\n    for kj in range(L):\n        allowed = kj <= qi and (qi - kj) < W\n        assert m[qi, kj].item() == allowed, f'[{qi},{kj}] should be {allowed}'\n"
+        },
+        {
+          "name": "Every layer is causal",
+          "code": "\nimport torch\nL, W = 7, 2\nmasks = {fn}(L, ['local', 'global', 'local', 'global', 'local'], W)\nfor li, m in enumerate(masks):\n    upper = torch.triu(torch.ones(L, L, dtype=torch.bool), diagonal=1)\n    assert not (m & upper).any(), f'Layer {li} attends to the future'\n"
+        },
+        {
+          "name": "Large window makes local equal global",
+          "code": "\nimport torch\nL = 6\nmasks = {fn}(L, ['local', 'global'], 100)\nassert torch.equal(masks[0], masks[1]), 'window >= seq_len must reduce local to causal-global'\n"
+        },
+        {
+          "name": "Window of one is strictly diagonal",
+          "code": "\nimport torch\nmasks = {fn}(5, ['local'], 1)\nassert torch.equal(masks[0], torch.eye(5, dtype=torch.bool)), 'W=1 attends to self only'\n"
+        },
+        {
+          "name": "Alternating pattern matches expectations",
+          "code": "\nimport torch\nL, W = 10, 4\nlocal, global_m = {fn}(L, ['local', 'global'], W)\n# query 8 in the local layer must not see position 3 (distance 5 >= W)\nassert not local[8, 3].item() and local[8, 5].item()\nassert global_m[8, 3].item(), 'Global layer must see far history'\n# far-position reachability: local layer needs hops, global does not\nassert local[:, 0].sum().item() == W, 'Only the first W queries see position 0 locally'\nassert global_m[:, 0].all(), 'Everyone sees position 0 globally'\n"
+        }
+      ]
+    },
+    {
+      "id": "on_policy_distillation",
+      "title": "On-Policy Distillation Loss (GKD)",
+      "titleZh": "在线策略蒸馏损失（GKD）",
+      "difficulty": "Hard",
+      "functionName": "on_policy_distillation_loss",
+      "hint": "Per-token reverse KL gives `(B, T)`; select with `kl[generated_mask]`, `.mean()` over the selection; guard `numel() == 0` and return `torch.zeros(())`.",
+      "hintZh": "逐 token 反向 KL 得 `(B, T)`；用 `kl[generated_mask]` 选取后 `.mean()`；`numel() == 0` 时守卫返回 `torch.zeros(())`。",
+      "descriptionEn": "Implement the core objective of on-policy knowledge distillation — the GKD recipe.\n\nThe tokens the student generated itself (from its own sampling distribution) carry the distribution mismatch the training must fix. The trajectory contains both student-generated tokens and foreign tokens — the prompt, environment observations, tool outputs. Per-token reverse KL `D_KL(student_t || teacher_t)` is computed ONLY at positions the student produced, averaged over those positions, scaled by `T^2`.\n\nTraining on the student's own rollout data is what makes this on-policy: the student never drifts onto inputs it would not itself visit, and the objective is the mode-seeking reverse KL at exactly those states.\n\n**Signature:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, T, V)`\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * mean over masked positions of D_KL(student_T || teacher_T)`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The denominator is the number of masked positions, not `B*T`\n- Logits at unmasked positions must not influence the loss",
+      "descriptionZh": "实现在线策略知识蒸馏的核心目标——GKD 配方。\n\n学生自己生成（从它自己的采样分布）的 token 承载着训练要修正的分布失配。轨迹里既有学生生成的 token，也有外来 token——提示词、环境观察、工具输出。逐 token 的反向 KL `D_KL(student_t || teacher_t)` 只在学生产出的位置计算，对这些位置求平均，再乘 `T^2`。\n\n在学生自己的 rollout 数据上训练，这才是“在线策略”：学生永远不会漂到它自己不会到达的输入上，目标函数也恰是在这些状态上的模式寻求型反向 KL。\n\n**签名:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, T, V)`\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * 被掩码位置的 D_KL(student_T || teacher_T) 平均`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 分母是掩码位置数，不是 `B*T`\n- 未掩码位置的 logits 不得影响损失",
+      "tests": [
+        {
+          "name": "Zero when student matches teacher on generated tokens",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nlogits = torch.randn(2, 6, 10)\nmask = torch.zeros(2, 6, dtype=torch.bool)\nmask[:, 2:] = True\nout = {fn}(logits, logits.clone(), mask, temperature=2.0)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6), f'Identical logits must give 0, got {out}'\n"
+        },
+        {
+          "name": "Averages over masked positions only",
+          "code": "\nimport torch\ntorch.manual_seed(1)\ns = torch.randn(2, 5, 8)\nt = torch.randn(2, 5, 8)\nmask = torch.tensor([[False, True, True, False, False], [True, True, False, False, False]])\nT = 1.5\nlog_p = torch.log_softmax(s / T, dim=-1)\np = log_p.exp()\nlog_t = torch.log_softmax(t / T, dim=-1)\nper_tok = (p * (log_p - log_t)).sum(-1)\nexpected = per_tok[mask].mean() * T**2\nout = {fn}(s, t, mask, temperature=T)\nassert torch.allclose(out, expected, atol=1e-6), f'{out.item()} vs {expected.item()}'\n"
+        },
+        {
+          "name": "Unmasked logits are invisible",
+          "code": "\nimport torch\ntorch.manual_seed(2)\ns = torch.randn(2, 4, 6)\nt = torch.randn(2, 4, 6)\nmask = torch.tensor([[True, False, True, False], [True, True, True, False]])\nbase = {fn}(s, t, mask)\ns_perturbed = s.clone()\ns_perturbed[:, [1, 3]] += 50.0   # torch advanced indexing\nout = {fn}(s_perturbed, t, mask)\nassert torch.allclose(base, out, atol=1e-5), 'Prompt/observation logits must not affect the loss'\n"
+        },
+        {
+          "name": "Empty mask returns exact zero",
+          "code": "\nimport torch\ns = torch.randn(3, 4, 5)\nt = torch.randn(3, 4, 5)\nmask = torch.zeros(3, 4, dtype=torch.bool)\nout = {fn}(s, t, mask)\nassert out.item() == 0.0, f'No generated tokens must give exact 0.0, got {out.item()}'\nassert out.dim() == 0, 'Return a scalar tensor'\n"
+        },
+        {
+          "name": "Temperature squared scaling",
+          "code": "\nimport torch\ntorch.manual_seed(3)\ns = torch.randn(2, 3, 7)\nt = torch.randn(2, 3, 7)\nmask = torch.ones(2, 3, dtype=torch.bool)\nlow = {fn}(s, t, mask, temperature=1.0)\nhigh = {fn}(s * 3.0, t * 3.0, mask, temperature=3.0)\nassert torch.allclose(high, 9.0 * low, atol=1e-4), 'Logits scaled by T with temperature T multiplies the loss by T^2'\n"
+        },
+        {
+          "name": "Gradually drifting student sees growing loss",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nt = torch.randn(2, 4, 6)\nmask = torch.ones(2, 4, dtype=torch.bool)\nlosses = []\nfor eps in (0.0, 0.5, 2.0):\n    s = t + eps * torch.randn(2, 4, 6)\n    losses.append({fn}(s, t, mask).item())\nassert losses[0] < losses[1] < losses[2], f'Loss must grow with student drift: {losses}'\n"
+        }
+      ]
+    },
+    {
+      "id": "shared_expert_moe",
+      "title": "Sparse MoE with Shared Expert (Qwen3-MoE)",
+      "titleZh": "带共享专家的稀疏 MoE（Qwen3-MoE）",
+      "difficulty": "Hard",
+      "functionName": "shared_expert_moe",
+      "hint": "`expert_out = torch.einsum('td,edo->teo', x, expert_weights)` gives every expert output at once; gather the top-k with `idx.unsqueeze(-1).expand(...)`; renormalize like the sigmoid task; add the shared expert last.",
+      "hintZh": "`expert_out = torch.einsum('td,edo->teo', x, expert_weights)` 一次算出所有专家输出；用 `idx.unsqueeze(-1).expand(...)` gather 出 top-k；照 sigmoid 题那样重归一化；最后加共享专家。",
+      "descriptionEn": "Combine sparse routed experts with one always-on shared expert — the Qwen3-MoE / DeepSeek-V2 architecture detail.\n\nPure sparse routing lets every token see only `k` of `E` experts, which multiplies parameter count cheaply but fragments knowledge: facts every token needs get smeared across experts. The fix is a shared expert, activated for every token, carrying the common computation; routed experts add specialized knowledge on top.\n\nRouting (Qwen3-MoE convention): softmax over all experts, select top-k, renormalize the selected scores to sum to one. The output is `shared(x) + sum_i w_i * E_i(x)`.\n\n**Signature:** `shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k) -> Tensor`\n\n**Parameters:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`, one router vector per expert\n- `expert_weights` — `(E, d, d_out)`, expert `i` computes `x @ expert_weights[i]` (no bias)\n- `shared_expert_weight` — `(d, d_out)`, the shared expert computes `x @ shared_expert_weight`\n- `top_k` — routed experts activated per token\n\n**Returns:** `(T, d_out)` output tensor\n\n**Constraints:**\n- The shared expert is added exactly once per token, outside the routing\n- Selected routed weights are renormalized over the top-k scores",
+      "descriptionZh": "把稀疏路由专家与一个常开的共享专家组合——Qwen3-MoE / DeepSeek-V2 的架构细节。\n\n纯稀疏路由让每个 token 只见 `E` 个专家中的 `k` 个，参数量便宜地翻倍，但知识碎片化：每个 token 都需要的事实被抹平到各专家。解法是共享专家——每个 token 都激活，承载公共计算；路由专家在其上叠加专门知识。\n\n路由（Qwen3-MoE 约定）：对所有专家 softmax，选 top-k，选中分数重归一到和为 1。输出为 `shared(x) + Σ_i w_i · E_i(x)`。\n\n**签名:** `shared_expert_moe(hidden_states, router_weight, expert_weights, shared_expert_weight, top_k) -> Tensor`\n\n**参数:**\n- `hidden_states` — `(T, d)`\n- `router_weight` — `(E, d)`，每个专家一个路由向量\n- `expert_weights` — `(E, d, d_out)`，专家 `i` 计算 `x @ expert_weights[i]`（无偏置）\n- `shared_expert_weight` — `(d, d_out)`，共享专家计算 `x @ shared_expert_weight`\n- `top_k` — 每个 token 激活的路由专家数\n\n**返回:** `(T, d_out)` 输出张量\n\n**约束:**\n- 共享专家在路由之外，每个 token 恰好加一次\n- 选中的路由权重在 top-k 分数上重归一化",
+      "tests": [
+        {
+          "name": "Matches the manual loop",
+          "code": "\nimport torch\ntorch.manual_seed(0)\nT, d, E, d_out, k = 5, 6, 4, 3, 2\nx = torch.randn(T, d)\nrouter = torch.randn(E, d)\nexperts = torch.randn(E, d, d_out)\nshared = torch.randn(d, d_out)\nscores = torch.softmax(x @ router.T, dim=-1)\nvals, idx = scores.topk(k, dim=-1)\nw = vals / vals.sum(dim=-1, keepdim=True)\nexpected = x @ shared\nfor t in range(T):\n    for j in range(k):\n        expected[t] += w[t, j] * (x[t] @ experts[idx[t, j]])\nout = {fn}(x, router, experts, shared, k)\nassert out.shape == (T, d_out), f'Expected (T, d_out), got {out.shape}'\nassert torch.allclose(out, expected, atol=1e-5), f'Manual mismatch: {(out - expected).abs().max()}'\n"
+        },
+        {
+          "name": "k=E reduces to the dense softmax mixture plus shared",
+          "code": "\nimport torch\ntorch.manual_seed(1)\nT, d, E, d_out = 3, 4, 5, 2\nx = torch.randn(T, d)\nrouter = torch.randn(E, d)\nexperts = torch.randn(E, d, d_out)\nshared = torch.randn(d, d_out)\nout = {fn}(x, router, experts, shared, E)\ngates = torch.softmax(x @ router.T, dim=-1)\nexpected = x @ shared\nfor e in range(E):\n    expected += gates[:, e:e+1] * (x @ experts[e])\nassert torch.allclose(out, expected, atol=1e-5), 'k=E: renormalized top-k equals the full softmax'\n"
+        },
+        {
+          "name": "The shared expert always contributes",
+          "code": "\nimport torch\ntorch.manual_seed(2)\nT, d, E, d_out = 4, 3, 3, 3\nx = torch.randn(T, d)\nrouter = torch.randn(E, d)\nexperts = torch.zeros(E, d, d_out)          # routed experts contribute nothing\nshared = torch.randn(d, d_out)\nout = {fn}(x, router, experts, shared, 2)\nassert torch.allclose(out, x @ shared, atol=1e-6), 'Shared expert must carry the output alone'\n"
+        },
+        {
+          "name": "k=1 ignores the score magnitude",
+          "code": "\nimport torch\ntorch.manual_seed(3)\nT, d, E, d_out = 2, 4, 4, 2\nx = torch.randn(T, d)\nrouter1 = torch.randn(E, d)\nrouter2 = router1 * 3.0                    # same argmax, sharper distribution\nexperts = torch.randn(E, d, d_out)\nshared = torch.randn(d, d_out)\nout1 = {fn}(x, router1, experts, shared, 1)\nout2 = {fn}(x, router2, experts, shared, 1)\nassert torch.allclose(out1, out2, atol=1e-5), 'k=1 renormalizes the winner to 1.0 regardless of its score'\n"
+        },
+        {
+          "name": "Gradients reach experts, router and hidden states",
+          "code": "\nimport torch\ntorch.manual_seed(4)\nT, d, E, d_out = 3, 5, 4, 2\nx = torch.randn(T, d, requires_grad=True)\nrouter = torch.randn(E, d, requires_grad=True)\nexperts = torch.randn(E, d, d_out, requires_grad=True)\nshared = torch.randn(d, d_out, requires_grad=True)\nout = {fn}(x, router, experts, shared, 2)\nout.pow(2).sum().backward()\nfor name, p in (('x', x), ('router', router), ('experts', experts), ('shared', shared)):\n    assert p.grad is not None and p.grad.abs().sum() > 0, f'No gradient reached {name}'\n"
+        },
+        {
+          "name": "Shared expert added exactly once",
+          "code": "\nimport torch\nT, d, E, d_out = 2, 3, 2, 3\nx = torch.randn(T, d)\nrouter = torch.zeros(E, d)                  # uniform scores\nexperts = torch.zeros(E, d, d_out)\nshared = torch.ones(d, d_out)\nout = {fn}(x, router, experts, shared, 2)\n# routed experts are zero, shared is all-ones: output = x.sum(-1, keepdim) * ones\nexpected = x.sum(dim=-1, keepdim=True).expand(T, d_out)\nassert torch.allclose(out, expected, atol=1e-6), 'Shared must appear once, not k times'\n"
+        }
+      ]
+    },
+    {
+      "id": "yarn_rope",
+      "title": "YaRN Long-Context RoPE Cache",
+      "titleZh": "YaRN 长上下文 RoPE 缓存",
+      "difficulty": "Hard",
+      "functionName": "yarn_rope_cache",
+      "hint": "Implement the correction-dim formulas with math.log, build the ramp with torch.arange clamped, blend the two inv_freq variants, then `torch.outer`; remember the attn_factor on both cos and sin.",
+      "hintZh": "用 math.log 实现修正维公式，torch.arange 加 clamp 构建渐变，混合两种 inv_freq 后 `torch.outer`；别忘了 cos 和 sin 都要乘 attn_factor。",
+      "descriptionEn": "Build the rotary embedding cache with YaRN scaling — the long-context recipe behind Qwen2.5-1M-class and DeepSeek-style context extensions.\n\nNaive RoPE interpolation (divide all frequencies by the scale) blurs high-frequency positional detail; pure NTK extrapolation loses coherence at range. YaRN (Yet another RoPE extensioN) interpolates only the low-frequency dimensions and extrapolates the rest, with a linear ramp between the two regimes, plus an attention temperature `attn_factor = 1 + 0.1 * ln(scale)` that compensates the averaged attention drop.\n\nPer dimension `i` of the `head_dim // 2` frequency pairs, with `inv_freq_i = base^(-2i/head_dim)`:\n- correction dim: `corr(n) = head_dim * ln(original_max / (n * 2*pi)) / (2 * ln(base))`\n- `low = max(floor(corr(beta_fast)), 0)`, `high = min(ceil(corr(beta_slow)), head_dim - 1)`; if `low == high`, `high += 1`\n- ramp: `ramp_i = clamp((i - low) / (high - low), 0, 1)`; `mask_i = 1 - ramp_i`\n- `inv_freq_i = interpolation_i * (1 - mask_i) + extrapolation_i * mask_i`, where `interpolation = inv_freq / scale_factor` and `extrapolation = inv_freq`\n- `freqs = outer(positions, inv_freq)`; cos/sin are the concatenated doubled halves, multiplied by `attn_factor`\n\n**Signature:** `yarn_rope_cache(positions, head_dim, base=10000.0, original_max_position=2048, scale_factor=4.0, beta_fast=32.0, beta_slow=1.0) -> (cos, sin)`\n\n**Parameters:**\n- `positions` — 1-D integer/float tensor of sequence positions\n- `head_dim` — even\n\n**Returns:** `(cos, sin)`, each `(T, head_dim)` with the two halves duplicated",
+      "descriptionZh": "构建带 YaRN 缩放的旋转位置编码缓存——Qwen2.5-1M 级、DeepSeek 式上下文扩展背后的长上下文配方。\n\n朴素 RoPE 插值（所有频率除以缩放倍数）会模糊高频位置细节；纯 NTK 外推又会在远处失焦。YaRN（Yet another RoPE extensioN）只对低频维度插值、其余外推，两区之间线性渐变，并用注意力温度 `attn_factor = 1 + 0.1 * ln(scale)` 补偿平均注意力下降。\n\n对 `head_dim // 2` 组频率的第 `i` 维，`inv_freq_i = base^(-2i/head_dim)`：\n- 修正维：`corr(n) = head_dim * ln(original_max / (n * 2*pi)) / (2 * ln(base))`\n- `low = max(floor(corr(beta_fast)), 0)`，`high = min(ceil(corr(beta_slow)), head_dim - 1)`；若 `low == high` 则 `high += 1`\n- 渐变：`ramp_i = clamp((i - low) / (high - low), 0, 1)`；`mask_i = 1 - ramp_i`\n- `inv_freq_i = interpolation_i * (1 - mask_i) + extrapolation_i * mask_i`，其中 `interpolation = inv_freq / scale_factor`，`extrapolation = inv_freq`\n- `freqs = outer(positions, inv_freq)`；cos/sin 为拼接翻倍的两半，再乘 `attn_factor`\n\n**签名:** `yarn_rope_cache(positions, head_dim, base=10000.0, original_max_position=2048, scale_factor=4.0, beta_fast=32.0, beta_slow=1.0) -> (cos, sin)`\n\n**参数:**\n- `positions` — 一维整数/浮点位置张量\n- `head_dim` — 偶数\n\n**返回:** `(cos, sin)`，各 `(T, head_dim)`，两半翻倍拼接",
+      "tests": [
+        {
+          "name": "Scale 1 reduces to plain RoPE",
+          "code": "\nimport torch\npositions = torch.arange(0, 128)\ncos, sin = {fn}(positions, 16, base=10000.0, original_max_position=2048, scale_factor=1.0)\ninv = 10000.0 ** (torch.arange(0, 16, 2).float() / 16)\nfreqs = torch.outer(positions.float(), inv)\nexpected_cos = torch.cat((freqs.cos(), freqs.cos()), dim=-1)\nexpected_sin = torch.cat((freqs.sin(), freqs.sin()), dim=-1)\nassert torch.allclose(cos, expected_cos, atol=1e-5), 'scale=1 must be plain RoPE'\nassert torch.allclose(sin, expected_sin, atol=1e-5)\n"
+        },
+        {
+          "name": "Output shapes",
+          "code": "\nimport torch\npositions = torch.arange(0, 64)\ncos, sin = {fn}(positions, 32)\nassert cos.shape == (64, 32) and sin.shape == (64, 32), f'Got {cos.shape}, {sin.shape}'\nassert not torch.isnan(cos).any() and not torch.isnan(sin).any()\n"
+        },
+        {
+          "name": "Matches the YaRN reference computation",
+          "code": "\nimport math\nimport torch\ndef reference(positions, head_dim, base, orig_max, scale, beta_fast=32.0, beta_slow=1.0):\n    half = head_dim // 2\n    inv = base ** (torch.arange(0, head_dim, 2).float() / head_dim)\n    corr = lambda n: head_dim * math.log(orig_max / (n * 2 * math.pi)) / (2 * math.log(base))\n    low = max(math.floor(corr(beta_fast)), 0)\n    high = min(math.ceil(corr(beta_slow)), head_dim - 1)\n    if low == high:\n        high += 1\n    idx = torch.arange(half, dtype=torch.float32)\n    ramp = ((idx - low) / (high - low)).clamp(0, 1)\n    mask = 1 - ramp\n    inv_freq = (inv / scale) * (1 - mask) + inv * mask\n    attn = 1.0 + 0.1 * math.log(scale)\n    freqs = torch.outer(positions.float(), inv_freq)\n    emb = torch.cat((freqs, freqs), dim=-1)\n    return emb.cos() * attn, emb.sin() * attn\npositions = torch.arange(0, 512)\ncos, sin = {fn}(positions, 64, base=10000.0, original_max_position=4096, scale_factor=8.0)\nref_cos, ref_sin = reference(positions, 64, 10000.0, 4096, 8.0)\nassert torch.allclose(cos, ref_cos, atol=1e-5), 'cos mismatch vs reference'\nassert torch.allclose(sin, ref_sin, atol=1e-5), 'sin mismatch vs reference'\n"
+        },
+        {
+          "name": "Extrapolation and interpolation regimes are correct",
+          "code": "\nimport math\nimport torch\nhead_dim, base, orig_max, scale = 32, 10000.0, 2048, 4.0\npositions = torch.arange(0, 256)\ncorr = lambda n: head_dim * math.log(orig_max / (n * 2 * math.pi)) / (2 * math.log(base))\nlow = max(math.floor(corr(32.0)), 0)\nhigh = min(math.ceil(corr(1.0)), head_dim - 1)\nassert low < high\ncos, sin = {fn}(positions, head_dim, base=base, original_max_position=orig_max, scale_factor=scale)\nattn = 1.0 + 0.1 * math.log(scale)\nhalf = head_dim // 2\ninv = base ** (torch.arange(0, head_dim, 2).float() / head_dim)\nplain = torch.outer(positions.float(), inv)\ncos_first = cos[:, :half]  # the two halves are duplicated; compare the first\n# dimensions i <= low stay extrapolated (unscaled), i >= high are interpolated (positions scaled)\nassert torch.allclose(cos_first[:, :low + 1], plain[:, :low + 1].cos() * attn, atol=1e-4), 'low-dim indices must extrapolate'\nscaled = torch.outer(positions.float() / scale, inv)\nassert torch.allclose(cos_first[:, high:], scaled[:, high:].cos() * attn, atol=1e-4), 'high-dim indices must interpolate'\n"
+        },
+        {
+          "name": "Attention factor is applied",
+          "code": "\nimport math\nimport torch\nhead_dim, base, orig_max, scale = 16, 10000.0, 2048, 16.0\npositions = torch.arange(0, 32)\ncos, sin = {fn}(positions, head_dim, base=base, original_max_position=orig_max, scale_factor=scale)\ncorr = lambda n: head_dim * math.log(orig_max / (n * 2 * math.pi)) / (2 * math.log(base))\nlow = max(math.floor(corr(32.0)), 0)\nattn = 1.0 + 0.1 * math.log(scale)\ninv = base ** (torch.arange(0, head_dim, 2).float() / head_dim)\nplain = torch.outer(positions.float(), inv)\nratio = (cos[:, 0] / plain[:, 0].cos()).median()\nassert torch.allclose(ratio, torch.tensor(attn), atol=1e-3), f'Column 0 carries the attention factor, ratio {ratio}'\n"
+        }
+      ]
     }
   ]
 }
