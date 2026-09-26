@@ -32,7 +32,7 @@ export default function PathDetailPage() {
   const [path, setPath] = useState<PathDetail | null>(null);
 
   useEffect(() => {
-    fetch(`/api/paths/${id}`)
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/paths/${id}`)
       .then((r) => r.json())
       .then((d) => setPath(d));
   }, [id]);

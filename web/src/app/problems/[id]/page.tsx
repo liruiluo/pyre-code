@@ -63,7 +63,7 @@ function WorkspacePageNew() {
 
   useEffect(() => {
     codeReadyRef.current = false;
-    fetch(`/api/problems/${id}`)
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/problems/${id}`)
       .then((r) => r.json())
       .then((data) => {
         setProblem(data);
@@ -86,12 +86,12 @@ function WorkspacePageNew() {
     fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/progress`)
       .then((r) => r.json())
       .then((d) => setProgress(d.progress || {}));
-    fetch(`/api/submissions/${id}`)
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/submissions/${id}`)
       .then((r) => r.json())
       .then((d: SubmissionHistory[]) => setSubmissionHistory(d))
       .catch(() => {});
     if (pathId) {
-      fetch(`/api/paths/${pathId}`)
+      fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/paths/${pathId}`)
         .then((r) => r.json())
         .then((d) => setPathData(d));
     } else {
@@ -180,7 +180,7 @@ function WorkspacePageNew() {
       setBottomTab('testresults');
       setFeedbackResult(data);
       fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/progress`).then((r) => r.json()).then((d) => setProgress(d.progress || {}));
-      fetch(`/api/submissions/${id}`).then((r) => r.json()).then((d: SubmissionHistory[]) => setSubmissionHistory(d)).catch(() => {});
+      fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/submissions/${id}`).then((r) => r.json()).then((d: SubmissionHistory[]) => setSubmissionHistory(d)).catch(() => {});
     } catch {
       const err = { passed: 0, total: 0, allPassed: false, results: [], totalTimeMs: 0, error: t('networkError') };
       setSubmissionResult(err);
