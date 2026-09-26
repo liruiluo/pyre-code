@@ -1513,6 +1513,20 @@
       }
     ]
   },
+  "multi_teacher_opd": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    if generated_mask.sum() == 0:\n        return torch.zeros((), dtype=student_logits.dtype)\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    total = torch.zeros((), dtype=student_logits.dtype)\n    for m in range(teacher_logits_stack.shape[0]):\n        log_t = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)\n        per_tok = (p * (log_p - log_t)).sum(dim=-1)\n        kl_m = per_tok[generated_mask].mean()\n        total = total + teacher_weights[m] * kl_m\n    return total * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nstudent = torch.randn(2, 5, 10)\nmath_teacher = student + 0.5 * torch.randn(2, 5, 10)\ncode_teacher = student + 0.8 * torch.randn(2, 5, 10)\nteachers = torch.stack((math_teacher, code_teacher))\nmask = torch.ones(2, 5, dtype=torch.bool)\nfor w in ([1.0, 0.0], [0.5, 0.5], [0.0, 1.0]):\n    loss = multi_teacher_opd_loss(student, teachers, torch.tensor(w), mask, temperature=2.0)\n    print(f'weights {w}: {loss.item():.4f}')",
+        "role": "demo"
+      }
+    ]
+  },
   "newton_schulz": {
     "cells": [
       {

@@ -234,8 +234,8 @@
       "id": "distillation-on-policy",
       "titleEn": "Distillation & On-Policy Transfer",
       "titleZh": "蒸馏与在线策略迁移",
-      "descriptionEn": "Move knowledge from a big teacher into a small student — classic KD, top-k and hidden-state variants, then the on-policy frontier: reverse KL on the student's own rollouts and action-level agent distillation.",
-      "descriptionZh": "把大教师的知识迁移进小学生——经典 KD、top-k 与隐状态变体，再到在线策略前沿：学生自己 rollout 上的反向 KL 与动作级 agent 蒸馏。",
+      "descriptionEn": "Move knowledge from a big teacher into a small student — classic KD, top-k and hidden-state variants, then the on-policy frontier: reverse KL on the student's own rollouts, action-level agent distillation, and MiMo-style multi-teacher blending.",
+      "descriptionZh": "把大教师的知识迁移进小学生——经典 KD、top-k 与隐状态变体，再到在线策略前沿：学生自己 rollout 上的反向 KL、动作级 agent 蒸馏，以及 MiMo 式多教师融合。",
       "icon": "GraduationCap",
       "problems": [
         "kl_divergence",
@@ -244,7 +244,8 @@
         "hidden_distillation",
         "reverse_kl_loss",
         "on_policy_distillation",
-        "action_level_distillation"
+        "action_level_distillation",
+        "multi_teacher_opd"
       ],
       "prerequisites": []
     },
@@ -252,8 +253,8 @@
       "id": "open-weights-anatomy",
       "titleEn": "Open-Weights Base Model Anatomy",
       "titleZh": "开源基模解剖",
-      "descriptionEn": "Dissect the architecture details of the open-weight flagships — Qwen3's QK-Norm and shared experts, GLM's partial RoPE, DeepSeek-V3's MLA, sigmoid routing and auxiliary-loss-free balancing, and Kimi K3's delta-rule attention with K2's Muon Newton-Schulz orthogonalizer; Gemma-2's hybrid attention and soft-capping close it out.",
-      "descriptionZh": "解剖开源旗舰基模的架构细节——Qwen3 的 QK-Norm 与共享专家、GLM 的 partial RoPE、DeepSeek-V3 的 MLA/sigmoid 路由与免辅助损失均衡、Kimi K3 的 delta rule 注意力与 K2 Muon 的 Newton-Schulz 正交化；Gemma-2 的混合注意力与 logit 软顶收尾。",
+      "descriptionEn": "Dissect how the strong open-weight families are actually built — Qwen, GLM, Kimi, DeepSeek and Xiaomi MiMo: QK-Norm, YaRN, partial RoPE, MoE routing tricks, hybrid sliding-window attention, delta-rule linear layers, and the Muon optimizer.",
+      "descriptionZh": "拆解最强开源模型家族的真实构造——Qwen、GLM、Kimi、DeepSeek 与小米 MiMo：QK-Norm、YaRN、部分 RoPE、MoE 路由技巧、混合滑窗注意力、delta 规则线性层，以及 Muon 优化器。",
       "icon": "Boxes",
       "problems": [
         "rmsnorm",
