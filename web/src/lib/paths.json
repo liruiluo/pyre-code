@@ -139,40 +139,6 @@
       "prerequisites": []
     },
     {
-      "id": "vision-transformer",
-      "titleEn": "Vision Transformer Pipeline",
-      "titleZh": "Vision Transformer 流水线",
-      "descriptionEn": "Build a ViT from the ground up — convolutions, patch embeddings, attention, and the full ViT block.",
-      "descriptionZh": "从零构建 ViT——卷积、Patch Embedding、注意力机制到完整的 ViT Block。",
-      "icon": "Microscope",
-      "problems": [
-        "conv2d",
-        "max_pool2d",
-        "depthwise_conv",
-        "vit_patch",
-        "attention",
-        "mha",
-        "vit_block"
-      ],
-      "prerequisites": []
-    },
-    {
-      "id": "diffusion-transformer",
-      "titleEn": "Diffusion Models & DiT",
-      "titleZh": "扩散模型与 DiT",
-      "descriptionEn": "From noise schedules to flow matching — implement the core algorithms behind Stable Diffusion 3, Flux, and DiT.",
-      "descriptionZh": "从噪声调度到流匹配——实现 Stable Diffusion 3、Flux 和 DiT 背后的核心算法。",
-      "icon": "Wand2",
-      "problems": [
-        "noise_schedule",
-        "ddim_step",
-        "flow_matching",
-        "adaln_zero",
-        "vit_block"
-      ],
-      "prerequisites": []
-    },
-    {
       "id": "llm-frontiers",
       "titleEn": "LLM Frontier Architectures",
       "titleZh": "LLM 前沿架构",
@@ -188,25 +154,6 @@
         "moe",
         "moe_load_balance",
         "multi_token_prediction"
-      ],
-      "prerequisites": []
-    },
-    {
-      "id": "graph-neural-networks",
-      "titleEn": "Graph Neural Networks",
-      "titleZh": "图神经网络",
-      "descriptionEn": "Master GNN fundamentals — from basic graph convolution to attention, message passing, and graph-level tasks.",
-      "descriptionZh": "掌握图神经网络基础——从图卷积到注意力、消息传递和图级任务。",
-      "icon": "Network",
-      "problems": [
-        "gcn_layer",
-        "graph_readout",
-        "gat_layer",
-        "gin_layer",
-        "mpnn_layer",
-        "link_prediction",
-        "graphsage_layer",
-        "gae"
       ],
       "prerequisites": []
     },

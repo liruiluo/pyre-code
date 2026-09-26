@@ -55,29 +55,6 @@
       }
     ]
   },
-  "flow_matching": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def flow_matching_loss(model_output, x0, x1, t):\n    target_velocity = x1 - x0\n    diff = model_output - target_velocity\n    return (diff * diff).mean()",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "torch.manual_seed(0)\n\nB, D = 16, 8\nx0 = torch.randn(B, D)\nx1 = torch.randn(B, D)\nt  = torch.rand(B)\n\nperfect_output = x1 - x0\nloss_perfect = flow_matching_loss(perfect_output, x0, x1, t)\nprint(f\"Perfect prediction => loss = {loss_perfect.item():.6f}  (expected 0.0)\")\n\nrandom_output = torch.randn(B, D)\nloss_random = flow_matching_loss(random_output, x0, x1, t)\nprint(f\"Random prediction  => loss = {loss_random.item():.4f}   (expected > 0)\")\n\nnoisy_output = perfect_output + 0.1 * torch.randn(B, D)\nloss_noisy = flow_matching_loss(noisy_output, x0, x1, t)\nprint(f\"Noisy prediction   => loss = {loss_noisy.item():.4f}   (expected small but > 0)\")",
-        "role": "demo"
-      }
-    ]
-  },
-  "gcn_layer": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def gcn_layer(A, X, W):\n    import torch\n    N = A.shape[0]\n    A_tilde = A + torch.eye(N)\n    D_vec = A_tilde.sum(1)\n    D_inv_sqrt = torch.diag(D_vec.pow(-0.5))\n    A_norm = D_inv_sqrt @ A_tilde @ D_inv_sqrt\n    return torch.relu(A_norm @ X @ W)",
-        "role": "solution"
-      }
-    ]
-  },
   "gelu": {
     "cells": [
       {
@@ -117,15 +94,6 @@
         "type": "code",
         "source": "p = torch.randn(100, requires_grad=True)\n(p * 10).sum().backward()\nprint('Before:', p.grad.norm().item())\norig = clip_grad_norm([p], max_norm=1.0)\nprint('After: ', p.grad.norm().item())\nprint('Returned:', orig)",
         "role": "demo"
-      }
-    ]
-  },
-  "graph_readout": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def graph_readout(X, batch, mode='mean'):\n    import torch\n    num_graphs = batch.max().item() + 1\n    D = X.shape[1]\n    if mode == 'sum':\n        out = torch.zeros(num_graphs, D)\n        out.index_add_(0, batch, X)\n        return out\n    elif mode == 'mean':\n        out = torch.zeros(num_graphs, D)\n        out.index_add_(0, batch, X)\n        count = torch.zeros(num_graphs)\n        count.index_add_(0, batch, torch.ones(batch.shape[0]))\n        return out / count.unsqueeze(1)\n    elif mode == 'max':\n        out = torch.full((num_graphs, D), float('-inf'))\n        for i in range(num_graphs):\n            mask = batch == i\n            out[i] = X[mask].max(dim=0).values\n        return out\n    else:\n        raise ValueError(f\"Unsupported mode: {mode}\")",
-        "role": "solution"
       }
     ]
   },
@@ -199,20 +167,6 @@
       }
     ]
   },
-  "max_pool2d": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def max_pool2d(x, kernel_size, stride=None):\n    if stride is None:\n        stride = kernel_size\n    # unfold extracts sliding local blocks\n    # after two unfolds: (B, C, H_out, W_out, kernel_size, kernel_size)\n    patches = x.unfold(2, kernel_size, stride).unfold(3, kernel_size, stride)\n    return patches.flatten(-2).max(dim=-1).values",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "x = torch.randn(1, 1, 4, 4)\nout = max_pool2d(x, kernel_size=2, stride=2)\nref = F.max_pool2d(x, kernel_size=2, stride=2)\nprint(\"Output shape:\", out.shape)\nprint(\"Matches F.max_pool2d:\", torch.allclose(out, ref))",
-        "role": "demo"
-      }
-    ]
-  },
   "mse_loss": {
     "cells": [
       {
@@ -223,20 +177,6 @@
       {
         "type": "code",
         "source": "pred = torch.tensor([1.0, 2.0, 3.0])\ntarget = torch.tensor([0.0, 2.0, 5.0])\nprint('mean:', mse_loss(pred, target).item())\nprint('sum: ', mse_loss(pred, target, reduction='sum').item())",
-        "role": "demo"
-      }
-    ]
-  },
-  "noise_schedule": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "import math as _math\n\ndef noise_schedule(num_timesteps, schedule_type='cosine'):\n    T = num_timesteps\n    t = torch.arange(T, dtype=torch.float32)\n    if schedule_type == 'linear':\n        beta_start, beta_end = 1e-4, 0.02\n        betas = beta_start + (beta_end - beta_start) * t / (T - 1)\n        alpha_bar = torch.cumprod(1 - betas, dim=0)\n    elif schedule_type == 'cosine':\n        s = 0.008\n        f = torch.cos(((t / T + s) / (1 + s)) * (_math.pi / 2)) ** 2\n        f0 = _math.cos((s / (1 + s)) * (_math.pi / 2)) ** 2\n        alpha_bar = (f / f0).clamp(0.0001, 0.9999)\n    elif schedule_type == 'sigmoid':\n        beta_start, beta_end = 1e-4, 0.02\n        x = t / T * 12 - 6\n        sig = 1 / (1 + torch.exp(-x))\n        betas = beta_start + (beta_end - beta_start) * (sig - sig.min()) / (sig.max() - sig.min())\n        alpha_bar = torch.cumprod(1 - betas, dim=0)\n    else:\n        raise ValueError(f'Unknown schedule_type: {schedule_type}')\n    return alpha_bar",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "T = 1000\nschedules = ['linear', 'cosine', 'sigmoid']\ncheckpoints = [0, T // 4, T // 2, 3 * T // 4, T - 1]\nlabels = ['t=0', 'T/4', 'T/2', '3T/4', 'T-1']\n\ncol_w = 10\nheader = f\"{'t':>6}\" + \"\".join(f\"{s:>{col_w}}\" for s in schedules)\nprint(header)\nprint(\"-\" * len(header))\n\nresults = {s: noise_schedule(T, s) for s in schedules}\nfor label, idx in zip(labels, checkpoints):\n    row = f\"{label:>6}\" + \"\".join(f\"{results[s][idx].item():>{col_w}.4f}\" for s in schedules)\n    print(row)",
         "role": "demo"
       }
     ]
@@ -377,20 +317,6 @@
       {
         "type": "code",
         "source": "torch.manual_seed(0)\nlayers = [torch.nn.Linear(16, 16) for _ in range(4)]\nx = torch.randn(4, 16, requires_grad=True)\n\nout_cp = checkpoint_sequential(layers, x)\n\nx2 = x.detach().requires_grad_(True)\nout_naive = x2\nfor layer in layers:\n    out_naive = layer(out_naive)\n\nprint(\"Outputs match:\", torch.allclose(out_cp, out_naive, atol=1e-5))\n\nout_cp.sum().backward()\nprint(\"Gradient flows (x.grad is not None):\", x.grad is not None)",
-        "role": "demo"
-      }
-    ]
-  },
-  "adaln_zero": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def adaln_zero(x, cond, W_ada, b_ada):\n    B, N, D = x.shape\n    params = cond @ W_ada + b_ada          # (B, 6*D)\n    chunks = params.chunk(6, dim=-1)       # 6 x (B, D)\n    gamma1, beta1, alpha1 = chunks[0], chunks[1], chunks[2]\n    # LayerNorm manually\n    mean = x.mean(dim=-1, keepdim=True)\n    var = x.var(dim=-1, keepdim=True, unbiased=False)\n    x_norm = (x - mean) / (var + 1e-6).sqrt()\n    # Modulate: unsqueeze for broadcast over N tokens\n    out = alpha1.unsqueeze(1) * (gamma1.unsqueeze(1) * x_norm + beta1.unsqueeze(1))\n    return out",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "torch.manual_seed(0)\n\nB, N, D = 4, 16, 32\nC = 16  # conditioning dim\n\nx    = torch.randn(B, N, D)\ncond = torch.randn(B, C)\n\nW_ada = torch.zeros(C, 6 * D)\nb_ada = torch.zeros(6 * D)\nout_zero = adaln_zero(x, cond, W_ada, b_ada)\nprint(f\"Zero W_ada, zero b_ada => max abs output: {out_zero.abs().max().item():.6f}  (expected 0.0)\")\n\nW_ada_rand = torch.randn(C, 6 * D) * 0.1\nb_ada_rand = torch.randn(6 * D) * 0.1\nout_rand = adaln_zero(x, cond, W_ada_rand, b_ada_rand)\nprint(f\"Random W_ada          => output shape: {out_rand.shape}, mean abs: {out_rand.abs().mean().item():.4f}\")",
         "role": "demo"
       }
     ]
@@ -577,20 +503,6 @@
       }
     ]
   },
-  "conv2d": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def my_conv2d(x, weight, bias=None, stride=1, padding=0):\n    if padding > 0:\n        B, C, H, W = x.shape\n        x_pad = torch.zeros(B, C, H + 2*padding, W + 2*padding, dtype=x.dtype, device=x.device)\n        x_pad[:, :, padding:padding+H, padding:padding+W] = x\n        x = x_pad\n    B, C_in, H, W = x.shape\n    C_out, _, kH, kW = weight.shape\n    H_out = (H - kH) // stride + 1\n    W_out = (W - kW) // stride + 1\n    patches = x.unfold(2, kH, stride).unfold(3, kW, stride)\n    out = torch.einsum('bihwjk,oijk->bohw', patches, weight)\n    if bias is not None:\n        out = out + bias.view(1, -1, 1, 1)\n    return out",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "x = torch.randn(1, 3, 8, 8)\nw = torch.randn(16, 3, 3, 3)\nprint('Output:', my_conv2d(x, w).shape)\nprint('Match:', torch.allclose(my_conv2d(x, w), F.conv2d(x, w), atol=1e-4))",
-        "role": "demo"
-      }
-    ]
-  },
   "cosine_lr": {
     "cells": [
       {
@@ -615,34 +527,6 @@
       {
         "type": "code",
         "source": "attn = MultiHeadCrossAttention(64, 4)\nx_q = torch.randn(2, 6, 64)\nx_kv = torch.randn(2, 10, 64)\nprint('Output:', attn(x_q, x_kv).shape)",
-        "role": "demo"
-      }
-    ]
-  },
-  "ddim_step": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def ddim_step(x_t, noise_pred, alpha_bar_t, alpha_bar_prev):\n    # Predict x0\n    x0_pred = (x_t - (1 - alpha_bar_t) ** 0.5 * noise_pred) / (alpha_bar_t ** 0.5)\n    # Direction toward x_t\n    noise_direction = (1 - alpha_bar_prev) ** 0.5 * noise_pred\n    # Previous sample\n    x_prev = (alpha_bar_prev ** 0.5) * x0_pred + noise_direction\n    return x_prev",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "torch.manual_seed(42)\n\nT = 5\nalpha_bars = torch.linspace(0.99, 0.01, T + 1)  # index 0..T\n\nx_clean = torch.tensor([1.0, -1.0, 0.5])  # target signal\nnoise   = torch.randn_like(x_clean)\n\nab_T = alpha_bars[T]\nx_t  = ab_T ** 0.5 * x_clean + (1 - ab_T) ** 0.5 * noise\n\nprint(f\"{'Step':>4}  {'alpha_bar_t':>12}  {'x_t (first elem)':>18}\")\nprint(\"-\" * 42)\nfor step in range(T, 0, -1):\n    ab_t    = alpha_bars[step]\n    ab_prev = alpha_bars[step - 1]\n    noise_pred = (x_t - ab_t ** 0.5 * x_clean) / (1 - ab_t) ** 0.5\n    x_t = ddim_step(x_t, noise_pred, ab_t, ab_prev)\n    print(f\"{step:>4}  {ab_prev.item():>12.4f}  {x_t[0].item():>18.4f}\")\n\nprint(f\"\nFinal x vs clean: {x_t.tolist()}  vs  {x_clean.tolist()}\")",
-        "role": "demo"
-      }
-    ]
-  },
-  "depthwise_conv": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def depthwise_separable_conv(x, dw_weight, pw_weight):\n    B, C_in, H, W = x.shape\n    kH, kW = dw_weight.shape[2], dw_weight.shape[3]\n    H_out, W_out = H - kH + 1, W - kW + 1\n    # Depthwise: unfold spatial dims to extract patches\n    patches = x.unfold(2, kH, 1).unfold(3, kW, 1)  # (B, C_in, H_out, W_out, kH, kW)\n    dw_out = (patches * dw_weight[:, 0].view(1, C_in, 1, 1, kH, kW)).sum(dim=(-2, -1))  # (B, C_in, H_out, W_out)\n    # Pointwise: 1x1 conv = channel-wise linear combination\n    out = torch.einsum('bchw,oc->bohw', dw_out, pw_weight[:, :, 0, 0])\n    return out",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "torch.manual_seed(0)\nB, C_in, H, W = 2, 4, 8, 8\nC_out, kH, kW = 8, 3, 3\n\nx         = torch.randn(B, C_in, H, W)\ndw_weight = torch.randn(C_in, 1, kH, kW)   # one kernel per input channel\npw_weight = torch.randn(C_out, C_in, 1, 1)  # 1x1 conv\n\nout = depthwise_separable_conv(x, dw_weight, pw_weight)\nprint(\"Output shape:\", out.shape)  # (2, 8, 6, 6)\n\npatches = x.unfold(2, kH, 1).unfold(3, kW, 1)\ndw_ch0 = (patches[:, 0:1] * dw_weight[0:1, 0].view(1, 1, 1, 1, kH, kW)).sum(dim=(-2, -1))\ndw_ch1 = (patches[:, 1:2] * dw_weight[1:2, 0].view(1, 1, 1, 1, kH, kW)).sum(dim=(-2, -1))\nprint(\"DW ch0 and ch1 are independent (cross-correlation ~0):\",\n      (dw_ch0 * dw_ch1).mean().abs().item() < 1.0)",
         "role": "demo"
       }
     ]
@@ -686,24 +570,6 @@
         "type": "code",
         "source": "rewards = torch.tensor([[1.0, 0.5, -0.25], [0.0, 1.0, 0.2]])\nvalues = torch.tensor([[0.2, 0.1, -0.1, 0.0], [0.1, 0.3, 0.4, 0.5]])\ndones = torch.tensor([[False, True, False], [False, False, True]])\nprint('Advantages:', gae_advantages(rewards, values, dones, gamma=0.9, lam=0.8))",
         "role": "demo"
-      }
-    ]
-  },
-  "gat_layer": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def gat_layer(A, X, W, a, negative_slope=0.2):\n    H = X @ W\n    F_out = H.size(-1)\n    e = (H @ a[:F_out]).unsqueeze(1) + (H @ a[F_out:]).unsqueeze(0)\n    e = torch.nn.functional.leaky_relu(e, negative_slope)\n    e = e.masked_fill(A == 0, float('-inf'))\n    alpha = torch.softmax(e, dim=-1)\n    return alpha @ H",
-        "role": "solution"
-      }
-    ]
-  },
-  "gin_layer": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def gin_layer(A, X, eps, W1, b1, W2, b2):\n    agg = A @ X\n    h = (1 + eps) * X + agg\n    h = torch.relu(h @ W1 + b1)\n    return h @ W2 + b2",
-        "role": "solution"
       }
     ]
   },
@@ -886,15 +752,6 @@
         "type": "code",
         "source": "num_experts = 4\nN_tokens = 100\nlogits_uniform = torch.zeros(N_tokens, num_experts)\nloss_uniform = moe_load_balance_loss(logits_uniform, num_experts)\nprint(f\"Uniform routing loss: {loss_uniform.item():.4f}  (expected 1.0)\")\n\nlogits_collapsed = torch.zeros(N_tokens, num_experts)\nlogits_collapsed[:, 0] = 100.0\nloss_collapsed = moe_load_balance_loss(logits_collapsed, num_experts)\nprint(f\"Collapsed routing loss: {loss_collapsed.item():.4f}  (expected > 1.0)\")\n\ntorch.manual_seed(0)\nlogits_grad = torch.randn(16, num_experts, requires_grad=True)\nloss_grad = moe_load_balance_loss(logits_grad, num_experts)\nloss_grad.backward()\nprint(f\"Gradient exists: {logits_grad.grad is not None}\")",
         "role": "demo"
-      }
-    ]
-  },
-  "mpnn_layer": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def mpnn_layer(A, X, E, W_msg, W_upd):\n    N, F = X.shape\n    Xi = X.unsqueeze(1).expand(N, N, F)\n    Xj = X.unsqueeze(0).expand(N, N, F)\n    inp = torch.cat([Xi, Xj, E], dim=-1)\n    msgs = torch.relu(inp @ W_msg)\n    msgs = msgs * A.unsqueeze(-1)\n    agg = msgs.sum(dim=1)\n    return torch.relu(torch.cat([X, agg], dim=-1) @ W_upd)",
-        "role": "solution"
       }
     ]
   },
@@ -1192,20 +1049,6 @@
       }
     ]
   },
-  "vit_patch": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "class PatchEmbedding(nn.Module):\n    def __init__(self, img_size, patch_size, in_channels, embed_dim):\n        super().__init__()\n        self.patch_size = patch_size\n        self.num_patches = (img_size // patch_size) ** 2\n        self.proj = nn.Linear(in_channels * patch_size * patch_size, embed_dim)\n\n    def forward(self, x):\n        B, C, H, W = x.shape\n        p = self.patch_size\n        n_h, n_w = H // p, W // p\n        x = x.reshape(B, C, n_h, p, n_w, p)\n        x = x.permute(0, 2, 4, 1, 3, 5).reshape(B, n_h * n_w, C * p * p)\n        return self.proj(x)",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "pe = PatchEmbedding(224, 16, 3, 768)\nx = torch.randn(1, 3, 224, 224)\nprint('Output:', pe(x).shape)\nprint('Patches:', pe.num_patches)",
-        "role": "demo"
-      }
-    ]
-  },
   "action_level_distillation": {
     "cells": [
       {
@@ -1290,15 +1133,6 @@
       }
     ]
   },
-  "gae": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def gae(A, X):\n    import torch\n    N = A.shape[0]\n    F = X.shape[1]\n    torch.manual_seed(0)\n    W1 = torch.randn(F, 32) * 0.1\n    W2 = torch.randn(32, 16) * 0.1\n    A_tilde = A + torch.eye(N)\n    D_vec = A_tilde.sum(1)\n    D_inv_sqrt = torch.diag(D_vec.pow(-0.5))\n    A_norm = D_inv_sqrt @ A_tilde @ D_inv_sqrt\n    H = torch.relu(A_norm @ X @ W1)\n    Z = A_norm @ H @ W2\n    return torch.sigmoid(Z @ Z.T)",
-        "role": "solution"
-      }
-    ]
-  },
   "gpt2_block": {
     "cells": [
       {
@@ -1324,15 +1158,6 @@
         "type": "code",
         "source": "gqa = GroupQueryAttention(32, 8, 2)\nprint('Output:', gqa.forward(torch.randn(1, 4, 32)).shape)",
         "role": "demo"
-      }
-    ]
-  },
-  "graphsage_layer": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def graphsage_layer(A, X, W, k=None):\n    import torch\n    N = A.shape[0]\n    F_in = X.shape[1]\n    agg_list = []\n    for i in range(N):\n        neighbors = (A[i] > 0).nonzero(as_tuple=True)[0]\n        if len(neighbors) == 0:\n            agg_list.append(torch.zeros(F_in))\n        else:\n            if k is not None and len(neighbors) > k:\n                torch.manual_seed(42)\n                perm = torch.randperm(len(neighbors))[:k]\n                neighbors = neighbors[perm]\n            agg_list.append(X[neighbors].mean(dim=0))\n    agg = torch.stack(agg_list)\n    concat = torch.cat([X, agg], dim=1)\n    out = torch.relu(concat @ W)\n    out = out / out.norm(dim=-1, keepdim=True).clamp(min=1e-8)\n    return out",
-        "role": "solution"
       }
     ]
   },
@@ -1417,15 +1242,6 @@
         "type": "code",
         "source": "Q=torch.randn(1,8,16); K=torch.randn(1,8,16); V=torch.randn(1,8,32)\nprint('Shape:', linear_attention(Q,K,V).shape)",
         "role": "demo"
-      }
-    ]
-  },
-  "link_prediction": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "def link_prediction(A, X, edges):\n    import torch\n    N = A.shape[0]\n    F = X.shape[1]\n    torch.manual_seed(0)\n    W1 = torch.randn(F, 16) * 0.1\n    W2 = torch.randn(16, 8) * 0.1\n    A_tilde = A + torch.eye(N)\n    D_vec = A_tilde.sum(1)\n    D_inv_sqrt = torch.diag(D_vec.pow(-0.5))\n    A_norm = D_inv_sqrt @ A_tilde @ D_inv_sqrt\n    H = torch.relu(A_norm @ X @ W1)\n    Z = A_norm @ H @ W2\n    scores = torch.sigmoid((Z[edges[:,0]] * Z[edges[:,1]]).sum(dim=1))\n    return scores",
-        "role": "solution"
       }
     ]
   },
@@ -1691,20 +1507,6 @@
       {
         "type": "code",
         "source": "block = TransformerEncoderLayer(d_model=64, num_heads=4)\nx = torch.randn(2, 8, 64)\nprint(block(x).shape)",
-        "role": "demo"
-      }
-    ]
-  },
-  "vit_block": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "import math as _math\n\nclass ViTBlock(nn.Module):\n    def __init__(self, d_model, num_heads):\n        super().__init__()\n        self.num_heads = num_heads\n        self.d_h = d_model // num_heads\n        self.norm1 = nn.LayerNorm(d_model)\n        self.norm2 = nn.LayerNorm(d_model)\n        self.qkv = nn.Linear(d_model, 3 * d_model, bias=False)\n        self.proj = nn.Linear(d_model, d_model)\n        self.fc1 = nn.Linear(d_model, 4 * d_model)\n        self.fc2 = nn.Linear(4 * d_model, d_model)\n\n    def _gelu(self, x):\n        return x * 0.5 * (1.0 + torch.erf(x / _math.sqrt(2.0)))\n\n    def _mha(self, x):\n        B, N, D = x.shape\n        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.d_h).permute(2, 0, 3, 1, 4)\n        q, k, v = qkv[0], qkv[1], qkv[2]\n        scale = self.d_h ** -0.5\n        attn = torch.softmax(q @ k.transpose(-2, -1) * scale, dim=-1)\n        out = (attn @ v).transpose(1, 2).reshape(B, N, D)\n        return self.proj(out)\n\n    def forward(self, x):\n        x = x + self._mha(self.norm1(x))\n        x = x + self.fc2(self._gelu(self.fc1(self.norm2(x))))\n        return x",
-        "role": "solution"
-      },
-      {
-        "type": "code",
-        "source": "torch.manual_seed(0)\nbatch, num_patches, d_model, num_heads = 2, 16, 64, 4\n\nblock = ViTBlock(d_model, num_heads)\nx = torch.randn(batch, num_patches, d_model)\nout = block(x)\n\nprint(\"Input shape: \", x.shape)    # (2, 16, 64)\nprint(\"Output shape:\", out.shape)  # (2, 16, 64)\nassert out.shape == x.shape, \"Shape mismatch!\"\nprint(\"Shape preserved: True\")",
         "role": "demo"
       }
     ]
