@@ -9,7 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl graphviz \
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY grading_service/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# The Aliyun host reaches pypi.org at ~10 KB/s and times out; use the Aliyun mirror instead.
+RUN pip install --no-cache-dir -r requirements.txt \
+    -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
 COPY torch_judge/ /app/torch_judge/
 COPY grading_service/ /app/grading_service/
