@@ -2,7 +2,9 @@
 FROM node:18-alpine AS deps
 WORKDIR /app
 COPY web/package.json web/package-lock.json ./
-RUN npm ci
+# The Aliyun host reaches registry.npmjs.org at dial-up speeds; npmmirror
+# (also run by Alibaba) is fast from there and serves the same packages.
+RUN npm ci --registry=https://registry.npmmirror.com
 
 # --- Stage 2: Build ---
 FROM node:18-alpine AS builder
