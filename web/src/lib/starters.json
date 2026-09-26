@@ -124,5 +124,6 @@
   "delta_rule_scan": "def delta_rule_scan(k, v, beta, S0):\n    pass",
   "bias_load_balancing": "def bias_adjusted_routing(hidden_states, router_weight, expert_biases, top_k):\n    pass",
   "newton_schulz": "def newton_schulz(G, steps=5):\n    pass",
-  "multi_teacher_opd": "def multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    pass"
+  "multi_teacher_opd": "def multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    pass",
+  "on_policy_self_distillation": "def opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):\n    pass"
 }

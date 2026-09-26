@@ -1555,6 +1555,20 @@
       }
     ]
   },
+  "on_policy_self_distillation": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return torch.zeros((), dtype=student_logits.dtype)\n    B, T, _ = student_logits.shape\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    idx = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]\n    rows = torch.arange(B, device=student_logits.device)[:, None]\n    priv = privileged_logits.detach()[rows, idx]\n    log_t = F.log_softmax(priv / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    return per_tok[generated_mask].mean() * (temperature ** 2)",
+        "role": "solution"
+      },
+      {
+        "type": "code",
+        "source": "import torch\ntorch.manual_seed(0)\nB, T, V = 2, 6, 10\nstudent = torch.randn(B, T, V)                       # question-only view, rollout logits\nprivileged = torch.randn(B, 14, V)                   # [hint, rollout] view\nprivileged[:, 4:4 + T] = student + 0.3 * torch.randn(B, T, V)  # views roughly agree\noffsets = torch.tensor([4, 4])\nmask = torch.ones(B, T, dtype=torch.bool)\nfor temp in (1.0, 2.0):\n    loss = opsd_loss(student, privileged, offsets, mask, temperature=temp)\n    print(f'temperature {temp}: {loss.item():.4f}')",
+        "role": "demo"
+      }
+    ]
+  },
   "paged_attention": {
     "cells": [
       {

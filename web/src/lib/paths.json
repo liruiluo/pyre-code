@@ -234,8 +234,8 @@
       "id": "distillation-on-policy",
       "titleEn": "Distillation & On-Policy Transfer",
       "titleZh": "蒸馏与在线策略迁移",
-      "descriptionEn": "Move knowledge from a big teacher into a small student — classic KD, top-k and hidden-state variants, then the on-policy frontier: reverse KL on the student's own rollouts, action-level agent distillation, and MiMo-style multi-teacher blending.",
-      "descriptionZh": "把大教师的知识迁移进小学生——经典 KD、top-k 与隐状态变体，再到在线策略前沿：学生自己 rollout 上的反向 KL、动作级 agent 蒸馏，以及 MiMo 式多教师融合。",
+      "descriptionEn": "Move knowledge from a big teacher into a small student — classic KD, top-k and hidden-state variants, then the on-policy frontier: reverse KL on the student's own rollouts, OPSD-style self-distillation from a privileged view of the same model, action-level agent distillation, and MiMo-style multi-teacher blending.",
+      "descriptionZh": "把大教师的知识迁移进小学生——经典 KD、top-k 与隐状态变体，再到在线策略前沿：学生自己 rollout 上的反向 KL、OPSD 式同模型特权视图自蒸馏、动作级 agent 蒸馏，以及 MiMo 式多教师融合。",
       "icon": "GraduationCap",
       "problems": [
         "kl_divergence",
@@ -244,6 +244,7 @@
         "hidden_distillation",
         "reverse_kl_loss",
         "on_policy_distillation",
+        "on_policy_self_distillation",
         "action_level_distillation",
         "multi_teacher_opd"
       ],
