@@ -16,6 +16,7 @@
         "batchnorm",
         "rmsnorm",
         "linear",
+        "linear_regression",
         "softmax_regression",
         "logistic_regression",
         "softmax",
