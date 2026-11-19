@@ -37,6 +37,15 @@ The problems cover what's actually inside Transformers, vLLM, TRL, diffusion mod
 - **Progress tracking** — solved count and attempt history, persisted across sessions
 - **AI Help** — optional AI-powered hints via any OpenAI-compatible API (configure in `.env` or per-user in the UI)
 - **Fully local** — nothing leaves your machine (unless you opt into AI Help)
+- **Personal study lists** — organize problems by confidence, mistakes, or any custom category
+
+### Personal Study Lists
+
+Select **My Lists** in the top navigation. The first visit creates three starter lists: 不会的题 (Not yet understood), 已会的题 (Mastered), and 细节易错 (Detail mistakes). Create, rename and delete lists, or remove problems from any list. Use **Add to list** from the problem catalog or workspace to place a problem in one or several lists. The problem catalog sidebar also lets you filter by list.
+
+Study lists are **independent of grading status**: passing tests never automatically marks a problem as mastered.
+
+Lists are stored in the existing SQLite database, keyed to the same anonymous browser-session cookie as submissions. They persist across page reloads and in the Docker data volume, but there is no account login or cross-browser synchronization yet. Clearing browser cookies or switching browsers can make existing lists inaccessible without restoring your session.
 
 ### Tech Stack
 
