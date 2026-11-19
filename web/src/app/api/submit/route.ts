@@ -69,7 +69,9 @@ export async function POST(request: Request) {
   const response = NextResponse.json(result);
   response.cookies.set('session_token', sessionToken, {
     httpOnly: true,
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
   });
 
   return response;
