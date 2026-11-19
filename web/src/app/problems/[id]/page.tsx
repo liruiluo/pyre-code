@@ -15,6 +15,7 @@ import { CodeEditor } from '@/components/workspace/CodeEditor';
 import { TestPanel } from '@/components/workspace/TestPanel';
 import { ActionBar } from '@/components/workspace/ActionBar';
 import { ChoicePanel } from '@/components/workspace/ChoicePanel';
+import { StudyListPickerButton } from '@/components/study/StudyListPickerButton';
 import { useProblemStore } from '@/store/problemStore';
 import { useLocale } from '@/context/LocaleContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -354,6 +355,11 @@ function WorkspacePageNew() {
         </button>
 
         <div className="flex-1" />
+
+        <StudyListPickerButton
+          problemId={id}
+          problemTitle={locale === 'zh' ? problem.titleZh : problem.title}
+        />
 
         {/* Path progress */}
         {pathData && pathProblems.length > 0 && (
