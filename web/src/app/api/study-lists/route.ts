@@ -4,7 +4,7 @@ import { GRADING_SERVICE_URL } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
-const COOKIE_AGE = 60 * 60 * 24 * 30;
+const COOKIE_AGE = 60 * 60 * 24 * 365;
 
 async function getSession() {
   const cookieStore = await cookies();
@@ -20,10 +20,10 @@ async function getSession() {
   });
   if (!userResponse.ok) throw new Error('Unable to initialize learner session');
   const { userId } = (await userResponse.json()) as { userId: number };
-  return { userId, token, newSession: !existing };
+  return { userId, token };
 }
 
-async function relay(response: Response, token: string, newSession: boolean) {
+async function relay(response: Response, token: string) {
   let data: unknown;
   try {
     data = await response.json();
@@ -32,25 +32,24 @@ async function relay(response: Response, token: string, newSession: boolean) {
   }
   const result = NextResponse.json(data, { status: response.status });
   result.headers.set('Cache-Control', 'no-store');
-  if (newSession) {
-    result.cookies.set('session_token', token, {
+  // Renew the anonymous session on every visit so study lists remain reachable.
+  result.cookies.set('session_token', token, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge: COOKIE_AGE,
       path: '/',
-    });
-  }
+  });
   return result;
 }
 
 export async function GET() {
   try {
-    const { userId, token, newSession } = await getSession();
+    const { userId, token } = await getSession();
     const upstream = await fetch(`${GRADING_SERVICE_URL}/study-lists/${userId}`, {
       cache: 'no-store',
     });
-    return relay(upstream, token, newSession);
+    return relay(upstream, token);
   } catch {
     return NextResponse.json({ detail: 'Study list service unavailable' }, { status: 502 });
   }
@@ -68,14 +67,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { token, newSession } = await getSession();
+    const { token } = await getSession();
     const upstream = await fetch(`${GRADING_SERVICE_URL}/study-lists/actions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...body, sessionToken: token }),
       cache: 'no-store',
     });
-    return relay(upstream, token, newSession);
+    return relay(upstream, token);
   } catch {
     return NextResponse.json({ detail: 'Study list service unavailable' }, { status: 502 });
   }
