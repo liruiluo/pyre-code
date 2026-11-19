@@ -75,6 +75,12 @@ export interface LearningPathProblemSummary {
   status: 'todo' | 'attempted' | 'solved';
 }
 
+export interface StudyList {
+  id: number;
+  name: string;
+  problemIds: string[];
+}
+
 export interface SubmissionHistory {
   id: number;
   passed: boolean;
