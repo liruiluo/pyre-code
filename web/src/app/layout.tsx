@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/context/LocaleContext";
+import { StudyListsProvider } from "@/context/StudyListsContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 
 const geist = Geist({
@@ -48,7 +49,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen">
         <ThemeProvider>
-          <LocaleProvider>{children}</LocaleProvider>
+          <LocaleProvider><StudyListsProvider>{children}</StudyListsProvider></LocaleProvider>
         </ThemeProvider>
       </body>
     </html>
