@@ -210,8 +210,8 @@ export default function MyListsPage() {
                             />
                             <button
                               type="button"
-                              title={t('deleteList') + ' / ' + t('addToList')}
-                              aria-label={t('deleteList') + ': ' + problem.id}
+                              title={t('removeFromList')}
+                              aria-label={t('removeFromList') + ': ' + problem.id}
                               disabled={saving}
                               onClick={() => void mutate({
                                 action: 'remove', listId: activeList.id, taskId: problem.id,
