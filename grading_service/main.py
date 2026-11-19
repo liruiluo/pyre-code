@@ -67,6 +67,28 @@ def _get_db() -> sqlite3.Connection:
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS study_lists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL COLLATE NOCASE,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, name)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS study_list_items (
+            list_id INTEGER NOT NULL REFERENCES study_lists(id) ON DELETE CASCADE,
+            task_id TEXT NOT NULL,
+            added_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (list_id, task_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS study_list_initializations (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
     conn.commit()
     return conn
 
@@ -385,3 +407,138 @@ def get_submissions(user_id: int, task_id: str) -> list[dict]:
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+
+# ---------------------------------------------------------------------------
+# Personal study lists. These are independent of automatic grading progress:
+# "mastered" is a learner's own judgment, not a synonym for tests passing.
+# ---------------------------------------------------------------------------
+
+from typing import Literal
+
+
+class StudyListAction(BaseModel):
+    sessionToken: str
+    action: Literal["create", "rename", "delete", "add", "remove"]
+    listId: int | None = None
+    name: str | None = None
+    taskId: str | None = None
+
+
+def _initialize_study_lists(conn: sqlite3.Connection, user_id: int) -> None:
+    """Seed three defaults once, including for users created before this feature.
+
+    The marker is intentionally retained if users rename/delete all defaults.
+    """
+    inserted = conn.execute(
+        "INSERT OR IGNORE INTO study_list_initializations (user_id) VALUES (?)",
+        (user_id,),
+    )
+    if inserted.rowcount:
+        conn.executemany(
+            "INSERT OR IGNORE INTO study_lists (user_id, name) VALUES (?, ?)",
+            [(user_id, name) for name in ("不会的题", "已会的题", "细节易错")],
+        )
+
+
+def _study_lists_snapshot(conn: sqlite3.Connection, user_id: int) -> dict[str, list[dict[str, Any]]]:
+    rows = conn.execute(
+        "SELECT id, name FROM study_lists WHERE user_id = ? ORDER BY id",
+        (user_id,),
+    ).fetchall()
+    items = conn.execute(
+        "SELECT i.list_id, i.task_id FROM study_list_items i "
+        "JOIN study_lists l ON l.id = i.list_id "
+        "WHERE l.user_id = ? ORDER BY i.added_at, i.rowid",
+        (user_id,),
+    ).fetchall()
+    ids: dict[int, list[str]] = {row[0]: [] for row in rows}
+    for list_id, task_id in items:
+        ids[list_id].append(task_id)
+    return {"lists": [{"id": list_id, "name": name, "problemIds": ids[list_id]} for list_id, name in rows]}
+
+
+def _study_list_user_id(conn: sqlite3.Connection, token: str) -> int:
+    row = conn.execute("SELECT id FROM users WHERE session_token = ?", (token,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return row[0]
+
+
+def _study_list_name(raw: str | None) -> str:
+    name = (raw or "").strip()
+    if not name or len(name) > 40:
+        raise HTTPException(status_code=400, detail="List name must be 1–40 characters")
+    return name
+
+
+@app.get("/study-lists/{user_id}")
+def get_study_lists(user_id: int) -> dict[str, list[dict[str, Any]]]:
+    with _get_db() as conn:
+        if not conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="User not found")
+        _initialize_study_lists(conn, user_id)
+        return _study_lists_snapshot(conn, user_id)
+
+
+@app.post("/study-lists/actions")
+def update_study_lists(request: StudyListAction) -> dict[str, list[dict[str, Any]]]:
+    with _get_db() as conn:
+        user_id = _study_list_user_id(conn, request.sessionToken)
+        _initialize_study_lists(conn, user_id)
+
+        if request.action == "create":
+            name = _study_list_name(request.name)
+            if conn.execute(
+                "SELECT COUNT(*) FROM study_lists WHERE user_id = ?", (user_id,)
+            ).fetchone()[0] >= 50:
+                raise HTTPException(status_code=400, detail="Maximum 50 study lists")
+            try:
+                conn.execute(
+                    "INSERT INTO study_lists (user_id, name) VALUES (?, ?)",
+                    (user_id, name),
+                )
+            except sqlite3.IntegrityError:
+                raise HTTPException(status_code=409, detail="A list with this name already exists")
+
+        else:
+            if request.listId is None:
+                raise HTTPException(status_code=400, detail="listId is required")
+            owned = conn.execute(
+                "SELECT 1 FROM study_lists WHERE id = ? AND user_id = ?",
+                (request.listId, user_id),
+            ).fetchone()
+            if not owned:
+                raise HTTPException(status_code=404, detail="Study list not found")
+
+            if request.action == "rename":
+                name = _study_list_name(request.name)
+                try:
+                    conn.execute(
+                        "UPDATE study_lists SET name = ? WHERE id = ? AND user_id = ?",
+                        (name, request.listId, user_id),
+                    )
+                except sqlite3.IntegrityError:
+                    raise HTTPException(status_code=409, detail="A list with this name already exists")
+            elif request.action == "delete":
+                conn.execute(
+                    "DELETE FROM study_lists WHERE id = ? AND user_id = ?",
+                    (request.listId, user_id),
+                )
+            else:
+                if not request.taskId:
+                    raise HTTPException(status_code=400, detail="taskId is required")
+                if request.action == "add":
+                    if get_task(request.taskId) is None:
+                        raise HTTPException(status_code=404, detail="Problem not found")
+                    conn.execute(
+                        "INSERT OR IGNORE INTO study_list_items (list_id, task_id) VALUES (?, ?)",
+                        (request.listId, request.taskId),
+                    )
+                else:  # remove
+                    conn.execute(
+                        "DELETE FROM study_list_items WHERE list_id = ? AND task_id = ?",
+                        (request.listId, request.taskId),
+                    )
+
+        return _study_lists_snapshot(conn, user_id)
