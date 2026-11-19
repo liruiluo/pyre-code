@@ -7,12 +7,16 @@ import { TopNav } from '@/components/layout/TopNav';
 import { Footer } from '@/components/layout/Footer';
 import { StatusIcon } from '@/components/problem/StatusIcon';
 import { Badge } from '@/components/ui/Badge';
+import { StudyListPickerButton } from '@/components/study/StudyListPickerButton';
+import { useStudyLists } from '@/context/StudyListsContext';
 import { useLocale } from '@/context/LocaleContext';
 import { cn } from '@/lib/utils';
 import type { Problem, ProgressMap } from '@/lib/types';
 
 export default function ProblemsPage() {
   const { locale, t } = useLocale();
+  const { lists } = useStudyLists();
+  const [studyListId, setStudyListId] = useState<number | null>(null);
   const [problems, setProblems] = useState<Problem[]>([]);
   const [progress, setProgress] = useState<ProgressMap>({});
   const [search, setSearch] = useState('');
@@ -51,6 +55,7 @@ export default function ProblemsPage() {
       if (!p.title.toLowerCase().includes(s) && !p.id.toLowerCase().includes(s)) return false;
     }
     if (difficulty && p.difficulty !== difficulty) return false;
+    if (studyListId !== null && !lists.some((list) => list.id === studyListId && list.problemIds.includes(p.id))) return false;
     if (category) {
       const cat = (p as Problem & { category?: string }).category || 'Other';
       if (cat !== category) return false;
@@ -84,6 +89,29 @@ export default function ProblemsPage() {
         <div className="grid grid-cols-[232px_minmax(0,1fr)] gap-10 items-start max-[900px]:grid-cols-1">
           {/* Sidebar */}
           <aside className="sticky top-[76px]">
+            {lists.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h5 className="eyebrow">{t('myLists')}</h5>
+                  <Link href="/lists" className="text-[12px] text-accent hover:underline">{t('myLists')} →</Link>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setStudyListId(null)}
+                    className={cn('text-left px-2.5 py-1.5 rounded-lg text-[13px]', studyListId === null ? 'text-accent bg-[var(--accent-wash)]' : 'text-text-2 hover:text-text')}
+                  >{t('All')}</button>
+                  {lists.map((list) => (
+                    <button key={list.id} type="button" onClick={() => setStudyListId(list.id === studyListId ? null : list.id)}
+                      className={cn('flex items-center justify-between text-left gap-2 px-2.5 py-1.5 rounded-lg text-[13px]', list.id === studyListId ? 'text-accent bg-[var(--accent-wash)]' : 'text-text-2 hover:text-text')}
+                    >
+                      <span className="truncate">{list.name}</span>
+                      <span className="mono text-xs text-text-3">{list.problemIds.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Categories */}
             {categories.length > 0 && (
               <div className="mb-6">
@@ -175,6 +203,7 @@ export default function ProblemsPage() {
                     <th className="text-left px-2 py-2.5 mono text-[11px] text-text-3 tracking-[0.12em] uppercase font-medium">{t('problems')}</th>
                     <th className="text-left px-2 py-2.5 mono text-[11px] text-text-3 tracking-[0.12em] uppercase font-medium">{t('category')}</th>
                     <th className="text-left px-2 py-2.5 mono text-[11px] text-text-3 tracking-[0.12em] uppercase font-medium">{t('difficulty')}</th>
+                    <th className="text-center px-2 py-2.5 mono text-[11px] text-text-3 tracking-[0.12em] uppercase font-medium">{t('myLists')}</th>
                     <th className="text-right px-2 py-2.5 mono text-[11px] text-text-3 tracking-[0.12em] uppercase font-medium">{t('time')}</th>
                     <th className="text-right px-4 py-2.5 mono text-[11px] text-text-3 tracking-[0.12em] uppercase font-medium">{t('status')}</th>
                   </tr>
@@ -208,6 +237,9 @@ export default function ProblemsPage() {
                           <Badge variant={p.difficulty.toLowerCase() as 'easy' | 'medium' | 'hard'}>
                             {p.difficulty.toUpperCase()}
                           </Badge>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <StudyListPickerButton compact problemId={p.id} problemTitle={locale === 'zh' ? p.titleZh : p.title} />
                         </td>
                         <td className="px-2 py-3 text-right mono text-[12px] text-text-3 tabular-nums">
                           {best ? `${best}ms` : '—'}
