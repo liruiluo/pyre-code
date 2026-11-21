@@ -115,7 +115,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef kd_loss(student_logits, teacher_logits, temperature=2.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    q = F.softmax(teacher_logits / temperature, dim=-1)\n    kl = F.kl_div(log_p, q, reduction=\"batchmean\")\n    return kl * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef kd_loss(student_logits, teacher_logits, temperature=2.0):\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    teacher_probs = F.softmax(teacher_logits.detach() / temperature, dim=-1)\n    return F.kl_div(log_student, teacher_probs, reduction=\"batchmean\") * temperature ** 2",
         "role": "solution"
       },
       {
@@ -857,7 +857,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef reverse_kl_loss(student_logits, teacher_logits, temperature=1.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    kl = (p * (log_p - log_t)).sum(dim=-1).mean()\n    return kl * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef reverse_kl_loss(student_logits, teacher_logits, temperature=1.0):\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)\n    kl = (student_probs * (log_student - log_teacher)).sum(dim=-1).mean()\n    return kl * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1011,7 +1011,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0):\n    b, v = teacher_logits.shape\n    k = min(int(k), v)\n    vals, idx = teacher_logits.topk(k, dim=-1)\n    s_top = student_logits.gather(-1, idx)\n    log_p = F.log_softmax(s_top / temperature, dim=-1)\n    q = F.softmax(vals / temperature, dim=-1)\n    kl = F.kl_div(log_p, q, reduction=\"batchmean\")\n    return kl * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0):\n    if k < 1 or k > teacher_logits.shape[-1]:\n        raise ValueError(\"k must satisfy 1 <= k <= vocabulary size\")\n    if temperature <= 0:\n        raise ValueError(\"temperature must be positive\")\n    # Teacher selects support, but is a fixed distribution for distillation.\n    values, indices = teacher_logits.detach().topk(k, dim=-1)\n    student_topk = student_logits.gather(-1, indices)\n    log_student = F.log_softmax(student_topk / temperature, dim=-1)\n    teacher_probs = F.softmax(values / temperature, dim=-1)\n    return F.kl_div(log_student, teacher_probs, reduction=\"batchmean\") * temperature ** 2",
         "role": "solution"
       },
       {

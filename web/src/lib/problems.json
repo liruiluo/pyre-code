@@ -931,14 +931,14 @@
     {
       "id": "grpo_loss",
       "type": "code",
-      "title": "GRPO (Group Relative Policy Optimization) Loss",
-      "titleZh": "GRPO 损失",
+      "title": "GRPO Group Advantages: REINFORCE Surrogate",
+      "titleZh": "GRPO 组相对优势：REINFORCE 简化目标",
       "difficulty": "Hard",
       "functionName": "grpo_loss",
       "hint": "1. for each group g: A_i = (r_i - mean_g) / (std_g + eps)\n2. advantages = A.detach()  (no grad through rewards)\n3. loss = -(advantages * logps).mean()",
       "hintZh": "1. 对每个组 g：A_i = (r_i - mean_g) / (std_g + eps)\n2. advantages = A.detach()（梯度不流经奖励）\n3. loss = -(advantages * logps).mean()",
-      "descriptionEn": "Implement the GRPO (Group Relative Policy Optimization) loss.\n\nGRPO normalizes rewards within each prompt group to compute advantages, then optimizes the policy using these group-relative advantages.\n\n**Signature:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `logps` — policy log-probabilities (B,)\n- `rewards` — scalar rewards (B,)\n- `group_ids` — integer group identifiers (B,)\n- `eps` — epsilon for numerical stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group z-score normalization: `A_i = (r_i - mean_g) / (std_g + eps)`\n- Advantages must be detached (gradients flow only through logps)\n- Loss = `-mean(A_i * logps_i)`",
-      "descriptionZh": "实现 GRPO（组相对策略优化）损失。\n\nGRPO 在每个提示组内归一化奖励以计算优势值，然后使用这些组相对优势优化策略。\n\n**签名:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**参数:**\n- `logps` — 策略对数概率 (B,)\n- `rewards` — 标量奖励 (B,)\n- `group_ids` — 整数组标识符 (B,)\n- `eps` — 数值稳定性的 epsilon\n\n**返回:** 标量损失\n\n**约束:**\n- 组内 z-score 归一化：`A_i = (r_i - mean_g) / (std_g + eps)`\n- 优势值必须 detach（梯度仅通过 logps 流动）\n- 损失 = `-mean(A_i * logps_i)`",
+      "descriptionEn": "Implement the GRPO (Group Relative Policy Optimization) loss.\n\nGRPO normalizes rewards within each prompt group to compute advantages. This exercise uses a simplified REINFORCE-style sequence-level surrogate without old-policy ratios, clipping, per-token masks or KL regularization; it is NOT the full practical GRPO training loss.\n\n**Signature:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `logps` — policy log-probabilities (B,)\n- `rewards` — scalar rewards (B,)\n- `group_ids` — integer group identifiers (B,)\n- `eps` — epsilon for numerical stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group z-score normalization: `A_i = (r_i - mean_g) / (std_g + eps)`\n- Advantages must be detached (gradients flow only through logps)\n- Loss = `-mean(A_i * logps_i)`",
+      "descriptionZh": "实现 GRPO（组相对策略优化）损失。\n\nGRPO 在每个提示组内归一化奖励以计算优势值。本题是序列级 REINFORCE 形式的简化目标，不含旧策略 ratio、clipping、逐 token mask 或 KL 正则，**并非**真实训练中的完整 GRPO Loss。\n\n**签名:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**参数:**\n- `logps` — 策略对数概率 (B,)\n- `rewards` — 标量奖励 (B,)\n- `group_ids` — 整数组标识符 (B,)\n- `eps` — 数值稳定性的 epsilon\n\n**返回:** 标量损失\n\n**约束:**\n- 组内 z-score 归一化：`A_i = (r_i - mean_g) / (std_g + eps)`\n- 优势值必须 detach（梯度仅通过 logps 流动）\n- 损失 = `-mean(A_i * logps_i)`",
       "tests": [
         {
           "name": "Basic shape & type",
@@ -955,6 +955,10 @@
         {
           "name": "Group-wise normalization",
           "code": "\nimport torch\nlogps = torch.zeros(4, requires_grad=True)\nrewards = torch.tensor([0.0, 1.0, 10.0, 11.0])\ngroup_ids = torch.tensor([0, 0, 1, 1])\nloss = {fn}(logps, rewards, group_ids)\nloss.backward()\n# Since each group has rewards [0,1] and [10,11], the normalized advantages\n# should be identical across groups, leading to identical gradients per position.\nassert torch.allclose(logps.grad[:2], logps.grad[2:]), 'Groups should be treated independently but symmetrically'\n"
+        },
+        {
+          "name": "Constant rewards in a group produce zero advantages",
+          "code": "\nimport torch\nlogps = torch.tensor([-0.2, -0.5, -0.8, -1.0], requires_grad=True)\nrewards = torch.tensor([2.0, 2.0, 3.0, 3.0])\ngroups = torch.tensor([0, 0, 1, 1])\nloss = {fn}(logps, rewards, groups)\nassert abs(loss.item()) < 1e-7\nloss.backward()\nassert torch.all(logps.grad == 0)\n"
         }
       ]
     },
@@ -1967,14 +1971,14 @@
     {
       "id": "grpo_clipped_loss",
       "type": "code",
-      "title": "GRPO Clipped Surrogate Loss",
-      "titleZh": "GRPO 裁剪代理损失",
+      "title": "GRPO Clipped Sequence-Level Surrogate",
+      "titleZh": "GRPO 裁剪代理目标（序列级简化）",
       "difficulty": "Hard",
       "functionName": "grpo_clipped_loss",
       "hint": "1. compute group-normalized rewards as detached advantages\n2. ratio = exp(new_logps - old_logps.detach())\n3. unclipped = ratio * advantages\n4. clipped = clamp(ratio, 1-eps_clip, 1+eps_clip) * advantages\n5. return -min(unclipped, clipped).mean()",
       "hintZh": "1. 先按 group 归一化 rewards，得到 detached advantages\n2. ratio = exp(new_logps - old_logps.detach())\n3. unclipped = ratio * advantages\n4. clipped = clamp(ratio, 1-eps_clip, 1+eps_clip) * advantages\n5. 返回 -min(unclipped, clipped).mean()",
-      "descriptionEn": "Implement a PPO-style clipped surrogate for GRPO.\n\nThe simpler GRPO task in this site teaches group-relative reward normalization with a policy-gradient style loss. This advanced version keeps that group-relative advantage computation, then adds the old-policy importance ratio and clipping used in practical GRPO-style objectives.\n\n**Signature:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `new_logps` — current policy log-probabilities, shape (B,)\n- `old_logps` — old policy log-probabilities, shape (B,), treated as constant\n- `rewards` — scalar rewards, shape (B,)\n- `group_ids` — integer prompt/group identifiers, shape (B,)\n- `clip_ratio` — clipping range epsilon\n- `eps` — epsilon for reward-standard-deviation stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group normalized advantage: `A_i = (reward_i - mean_group) / (std_group + eps)`\n- Importance ratio: `ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- Loss: `-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- Gradients flow only through `new_logps`",
-      "descriptionZh": "实现带 PPO-style ratio clipping 的 GRPO 裁剪代理损失。\n\n本站较简化的 GRPO 题用于练习组内奖励归一化和 policy-gradient 风格损失。本进阶版保留组相对优势计算，再加入旧策略重要性采样比率和裁剪，这更接近实际 GRPO 类目标。\n\n**签名:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**参数:**\n- `new_logps` — 当前策略对数概率，形状 (B,)\n- `old_logps` — 旧策略对数概率，形状 (B,)，视为常量\n- `rewards` — 标量奖励，形状 (B,)\n- `group_ids` — 整数提示/组标识，形状 (B,)\n- `clip_ratio` — 裁剪范围 epsilon\n- `eps` — 奖励标准差的数值稳定项\n\n**返回:** 标量损失\n\n**约束:**\n- 组内归一化优势：`A_i = (reward_i - mean_group) / (std_group + eps)`\n- 重要性采样比率：`ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- 损失：`-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- 梯度仅通过 `new_logps` 流动",
+      "descriptionEn": "Implement a PPO-style clipped surrogate for GRPO.\n\nThe simpler GRPO task in this site teaches group-relative reward normalization with a policy-gradient style loss. This advanced version adds old-policy importance ratios and PPO-style clipping, but uses one log-probability per whole response. It is a simplified sequence-level objective, not a complete token-level GRPO implementation with response masking, length reduction, reference KL and training-system details.\n\n**Signature:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `new_logps` — current policy log-probabilities, shape (B,)\n- `old_logps` — old policy log-probabilities, shape (B,), treated as constant\n- `rewards` — scalar rewards, shape (B,)\n- `group_ids` — integer prompt/group identifiers, shape (B,)\n- `clip_ratio` — clipping range epsilon\n- `eps` — epsilon for reward-standard-deviation stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group normalized advantage: `A_i = (reward_i - mean_group) / (std_group + eps)`\n- Importance ratio: `ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- Loss: `-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- Gradients flow only through `new_logps`",
+      "descriptionZh": "实现带 PPO-style ratio clipping 的 GRPO 裁剪代理损失。\n\n本站较简化的 GRPO 题用于练习组内奖励归一化和 policy-gradient 风格损失。本进阶版保留组相对优势计算，加入旧策略重要性采样比率和裁剪，但每条回复只有一个 log-prob。它是序列级简化目标，不包括实际训练的逐 token Mask、长度归一化、Reference KL 等细节。\n\n**签名:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**参数:**\n- `new_logps` — 当前策略对数概率，形状 (B,)\n- `old_logps` — 旧策略对数概率，形状 (B,)，视为常量\n- `rewards` — 标量奖励，形状 (B,)\n- `group_ids` — 整数提示/组标识，形状 (B,)\n- `clip_ratio` — 裁剪范围 epsilon\n- `eps` — 奖励标准差的数值稳定项\n\n**返回:** 标量损失\n\n**约束:**\n- 组内归一化优势：`A_i = (reward_i - mean_group) / (std_group + eps)`\n- 重要性采样比率：`ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- 损失：`-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- 梯度仅通过 `new_logps` 流动",
       "tests": [
         {
           "name": "Basic shape & type",
@@ -1991,6 +1995,10 @@
         {
           "name": "Gradient flows to new_logps only",
           "code": "\nimport torch\nnew_logps = torch.randn(4, requires_grad=True)\nold_logps = torch.randn(4, requires_grad=True)\nrewards = torch.randn(4, requires_grad=True)\ngroup_ids = torch.tensor([0, 0, 1, 1])\nloss = {fn}(new_logps, old_logps, rewards, group_ids)\nloss.backward()\nassert new_logps.grad is not None, 'Gradients should flow through new_logps'\nassert old_logps.grad is None, 'Gradients should not flow through old_logps'\nassert rewards.grad is None, 'Gradients should not flow through rewards'\n"
+        },
+        {
+          "name": "GRPO clipping gradients depend on advantage sign",
+          "code": "\nimport torch\nold = torch.zeros(4)\nratios = torch.tensor([1.5, 0.6, 0.6, 1.5])\nnew = ratios.log().detach().requires_grad_(True)\nrewards = torch.tensor([1.0, 0.0, 0.0, 1.0])\ngroups = torch.tensor([0, 0, 1, 1])\n# Group 0 advantages: +1,-1; group 1: -1,+1\n{fn}(new, old, rewards, groups, clip_ratio=0.2).backward()\nassert abs(new.grad[0].item()) < 1e-7\nassert abs(new.grad[1].item()) < 1e-7\nassert abs(new.grad[2].item()) < 1e-7\nassert abs(new.grad[3].item()) < 1e-7\n"
         }
       ]
     },
@@ -2757,6 +2765,10 @@
         {
           "name": "Direction is teacher-to-student",
           "code": "\nimport torch\ns = torch.tensor([[2.0, 0.0, -1.0]])\nt = torch.tensor([[0.0, 1.0, 0.0]])\n# D_KL(teacher || student) is large when the student is confident where the teacher is not\nbig = {fn}(s, t, temperature=1.0)\nsmall = {fn}(t * 1.5 - s * 0.5, t, temperature=1.0)\nassert big > small, 'Loss should shrink as student moves toward the teacher'\n"
+        },
+        {
+          "name": "Teacher logits do not receive gradients",
+          "code": "\nimport torch\nstudent = torch.randn(2, 5, requires_grad=True)\nteacher = torch.randn(2, 5, requires_grad=True)\n{fn}(student, teacher).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teacher.grad is None\n"
         }
       ]
     },
@@ -3141,8 +3153,8 @@
       "functionName": "reverse_kl_loss",
       "hint": "`log_p = F.log_softmax(student/T)`, `q = F.softmax(student/T)` — both from the student; then `(q * (log_p - log_t)).sum(-1).mean() * T**2` where `log_t = F.log_softmax(teacher/T)`.",
       "hintZh": "`log_p = F.log_softmax(student/T)`、`q = F.softmax(student/T)`——都来自学生；然后 `(q * (log_p - log_t)).sum(-1).mean() * T**2`，其中 `log_t = F.log_softmax(teacher/T)`。",
-      "descriptionEn": "Implement the reverse KL divergence used by on-policy distillation and RLHF objectives: `D_KL(student || teacher)`.\n\nDirection matters. Forward KL `D_KL(teacher || student)` is mass-covering — the student spreads probability over everything the teacher likes. Reverse KL `D_KL(student || teacher)` is mode-seeking — wherever the student puts mass, the teacher must agree, so the student concentrates on the teacher's best modes. Reverse KL is the divergence you get when the student's own samples drive the loss, which is exactly what on-policy distillation (GKD-style) optimizes.\n\n**Signature:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of D_KL(student_T || teacher_T)`\n\n**Constraints:**\n- Use stable log-softmax\n- Student first — this is the opposite direction from the classic KD loss",
-      "descriptionZh": "实现在线策略蒸馏与 RLHF 目标使用的反向 KL 散度：`D_KL(student || teacher)`。\n\n方向决定行为。前向 KL `D_KL(teacher || student)` 是覆盖型——学生把概率摊到教师喜欢的一切上。反向 KL `D_KL(student || teacher)` 是模式寻求型——学生放 mass 的地方教师必须同意，于是学生集中在教师最强的模式上。当损失由学生自己的采样驱动时，得到的就是反向 KL——这正是 GKD 式在线策略蒸馏所优化的。\n\n**签名:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 D_KL(student_T || teacher_T)`\n\n**约束:**\n- 使用稳定的 log-softmax\n- 学生在前——与经典 KD 损失方向相反",
+      "descriptionEn": "Implement the reverse KL divergence used by on-policy distillation and RLHF objectives: `D_KL(student || teacher)`.\n\nDirection matters. Forward KL `D_KL(teacher || student)` is mass-covering — the student spreads probability over everything the teacher likes. Reverse KL `D_KL(student || teacher)` is mode-seeking — wherever the student puts mass, the teacher must agree, so the student concentrates on the teacher's best modes. Sampling training contexts on-policy and choosing the KL direction are separate choices. GKD-style distillation can use forward KL, reverse KL or other divergences; this exercise specifically implements reverse KL.\n\n**Signature:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of D_KL(student_T || teacher_T)`\n\n**Constraints:**\n- Use stable log-softmax\n- Student first — this is the opposite direction from the classic KD loss",
+      "descriptionZh": "实现在线策略蒸馏与 RLHF 目标使用的反向 KL 散度：`D_KL(student || teacher)`。\n\n方向决定行为。前向 KL `D_KL(teacher || student)` 是覆盖型——学生把概率摊到教师喜欢的一切上。反向 KL `D_KL(student || teacher)` 是模式寻求型——学生放 mass 的地方教师必须同意，于是学生集中在教师最强的模式上。在线策略采样与 KL 方向是两个独立选择。GKD 类方法可使用 Forward KL、Reverse KL 或其他散度；本题专门实现 Reverse KL。\n\n**签名:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 D_KL(student_T || teacher_T)`\n\n**约束:**\n- 使用稳定的 log-softmax\n- 学生在前——与经典 KD 损失方向相反",
       "tests": [
         {
           "name": "Zero when distributions match",
@@ -3163,6 +3175,10 @@
         {
           "name": "Non-negative and gradient flows to the student",
           "code": "\nimport torch\ntorch.manual_seed(1)\ns = torch.randn(3, 7, requires_grad=True)\nt = torch.randn(3, 7)\nout = {fn}(s, t)\nassert out.item() >= -1e-6, 'KL must be non-negative'\nout.backward()\nassert s.grad is not None and s.grad.abs().sum() > 0\n"
+        },
+        {
+          "name": "Stop gradient through the teacher distribution",
+          "code": "\nimport torch\nstudent = torch.randn(3, 6, requires_grad=True)\nteacher = torch.randn(3, 6, requires_grad=True)\n{fn}(student, teacher).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teacher.grad is None\n"
         }
       ]
     },
@@ -3251,8 +3267,8 @@
       "functionName": "topk_kd_loss",
       "hint": "`vals, idx = teacher.topk(k, dim=-1)`; build a mask from `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` and apply the same mask to both sides.",
       "hintZh": "`vals, idx = teacher.topk(k, dim=-1)`；用 `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` 构造掩码后的教师 logits，学生用同样的索引掩码。",
-      "descriptionEn": "Distill only the teacher's top-k logits — the MiniLM recipe for representation distillation at scale.\n\nFull-vocabulary KL wastes capacity on the teacher's long tail. MiniLM keeps only the teacher's k largest logits, masks every other position to minus infinity on both sides, and computes the KL between the renormalized truncated distributions. The student is forced to match the teacher where it is confident.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
-      "descriptionZh": "只蒸馏教师 top-k 的 logits——大规模表征蒸馏的 MiniLM 配方。\n\n全词表 KL 把容量浪费在教师的长尾上。MiniLM 只保留教师 k 个最大 logits，其余位置在两侧都置为负无穷，再在重归一化的截断分布之间算 KL。学生被迫在教师自信的地方对齐。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
+      "descriptionEn": "Practice a deliberately truncated-vocabulary teacher top-k KL. This is NOT MiniLM's representation-distillation method.\n\nHere we keep the teacher's k largest-logit positions and renormalize BOTH teacher and student over only those positions. This ignores student mass outside top-k: in particular k=1 always gives zero loss. It is a pedagogical truncated KL, not a faithful substitute for full-vocabulary KD or top-k-plus-tail approximation.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
+      "descriptionZh": "练习在教师 top-k 词表支持集上计算截断 KL。本题**不是** MiniLM 的表征蒸馏方法。\n\n本题只保留教师最大的 k 个 logits，并让教师与学生都在这 k 个位置重归一化。这会忽略学生在其他词上的概率质量，尤其 k=1 时 Loss 恒为 0。它是教学用的截断 KL，不可直接视为完整词表 KD 或 Top-k+Tail 的替代。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
       "tests": [
         {
           "name": "Reduces to full KD when k equals vocabulary",
@@ -3273,6 +3289,10 @@
         {
           "name": "Teacher tail is dropped, only the top-k shape matters",
           "code": "\nimport torch\nt = torch.tensor([[5.0, 4.0, 3.0, 2.0, 1.0]])\ns_aligned = torch.tensor([[5.0, 4.0, 3.0, 2.0, 1.0]])\ns_mass_elsewhere = torch.tensor([[-1.0, -2.0, 5.0, 4.0, 3.0]])\ns_swapped = torch.tensor([[4.0, 5.0, 3.0, 2.0, 1.0]])\nout_aligned = {fn}(s_aligned, t, k=2)\nout_mass = {fn}(s_mass_elsewhere, t, k=2)\nout_swapped = {fn}(s_swapped, t, k=2)\nassert out_aligned.item() < 1e-6, 'Matching teacher top-2 should be near zero'\nassert out_mass.item() < 1e-6, f'Student mass outside the top-k support is invisible, got {out_mass.item()}'\nassert out_swapped.item() > 0.3, f'Swapped top-2 ordering must be penalized, got {out_swapped.item()}'\n"
+        },
+        {
+          "name": "Teacher gradients are stopped; invalid k is rejected",
+          "code": "\nimport torch\nstudent = torch.randn(2, 8, requires_grad=True)\nteacher = torch.randn(2, 8, requires_grad=True)\n{fn}(student, teacher, 3).backward()\nassert student.grad is not None and teacher.grad is None\nfor k in (0, 9):\n    try:\n        {fn}(student.detach(), teacher.detach(), k)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(f\"invalid k={k} must raise\")\n"
         }
       ]
     },
