@@ -19,6 +19,9 @@ on:
       - "web/src/lib/solutions.json"
       - "web/src/lib/paths.json"
       - "tests/test_interview_reference_solutions.py"
+      - "tests/test_live_coding_agent_example.py"
+      - "tests/test_sdk_docker_smoke.py"
+      - "examples/**"
       - ".github/workflows/interview-problems.yml"
   workflow_dispatch:
 
