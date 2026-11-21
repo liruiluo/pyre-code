@@ -25,7 +25,7 @@ TASK = {
         {
             "name": "Preserves direction",
             "code": "\nimport torch\ntorch.manual_seed(0)\np = torch.randn(100, requires_grad=True)\n(p * 10).sum().backward()\ndir_before = p.grad / p.grad.norm()\n{fn}([p], max_norm=1.0)\ndir_after = p.grad / p.grad.norm()\nassert torch.allclose(dir_before, dir_after, atol=1e-5), 'Should preserve direction'\n"
-        }
+        },
         {
             "name": "Missing gradients and max_norm=0",
             "code": """

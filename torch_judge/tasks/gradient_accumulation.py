@@ -21,7 +21,7 @@ TASK = {
         {
             "name": "Parameters actually update",
             "code": "\nimport torch, torch.nn as nn\nmodel = nn.Linear(4, 2)\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\nw_before = model.weight.data.clone()\n{fn}(model, opt, nn.MSELoss(), [(torch.randn(2, 4), torch.randn(2, 2))])\nassert not torch.equal(model.weight.data, w_before), 'Should change'\n"
-        }
+        },
         {
             "name": "Unequal micro-batches match a single full-batch update",
             "code": """
