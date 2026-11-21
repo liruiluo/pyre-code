@@ -791,10 +791,10 @@
       "titleZh": "DPO 损失",
       "difficulty": "Medium",
       "functionName": "dpo_loss",
-      "hint": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = -log(sigmoid(chosen_logratios - rejected_logratios)).mean()",
-      "hintZh": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = -log(sigmoid(chosen_logratios - rejected_logratios)).mean()",
-      "descriptionEn": "Implement the DPO (Direct Preference Optimization) loss.\n\nDPO aligns language models with human preferences without reinforcement learning, using paired chosen/rejected log-probabilities.\n\n**Signature:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_chosen_logps` — policy log-probs for chosen responses (B,)\n- `policy_rejected_logps` — policy log-probs for rejected responses (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — reference model log-probs (B,)\n- `beta` — temperature scaling factor\n\n**Returns:** scalar loss\n\n**Constraints:**\n- `L = -log(sigmoid(beta * ((pi_c - ref_c) - (pi_r - ref_r)))).mean()`",
-      "descriptionZh": "实现 DPO（直接偏好优化）损失。\n\nDPO 无需强化学习即可将语言模型与人类偏好对齐，使用配对的选中/拒绝对数概率。\n\n**签名:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_chosen_logps` — 策略模型对选中回复的对数概率 (B,)\n- `policy_rejected_logps` — 策略模型对拒绝回复的对数概率 (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — 参考模型的对数概率 (B,)\n- `beta` — 温度缩放因子\n\n**返回:** 标量损失\n\n**约束:**\n- `L = -log(sigmoid(beta * ((pi_c - ref_c) - (pi_r - ref_r)))).mean()`",
+      "hint": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = F.softplus(-(chosen_logratios - rejected_logratios)).mean()",
+      "hintZh": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = F.softplus(-(chosen_logratios - rejected_logratios)).mean()",
+      "descriptionEn": "Implement the DPO (Direct Preference Optimization) loss.\n\nDPO aligns language models with human preferences without reinforcement learning, using paired chosen/rejected log-probabilities.\n\n**Signature:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_chosen_logps` — policy log-probs for chosen responses (B,)\n- `policy_rejected_logps` — policy log-probs for rejected responses (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — reference model log-probs (B,)\n- `beta` — temperature scaling factor\n\n**Returns:** scalar loss\n\n**Constraints:**\n- `L = softplus(-beta * ((pi_c - ref_c) - (pi_r - ref_r))).mean()` (numerically stable)\n- Reference model log-probabilities are detached constants",
+      "descriptionZh": "实现 DPO（直接偏好优化）损失。\n\nDPO 无需强化学习即可将语言模型与人类偏好对齐，使用配对的选中/拒绝对数概率。\n\n**签名:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_chosen_logps` — 策略模型对选中回复的对数概率 (B,)\n- `policy_rejected_logps` — 策略模型对拒绝回复的对数概率 (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — 参考模型的对数概率 (B,)\n- `beta` — 温度缩放因子\n\n**返回:** 标量损失\n\n**约束:**\n- `L = softplus(-beta * ((pi_c - ref_c) - (pi_r - ref_r))).mean()`（数值稳定）\n- 参考模型 log-probs 不参与梯度更新",
       "tests": [
         {
           "name": "Easy pair: small loss",
@@ -815,6 +815,14 @@
         {
           "name": "Beta scaling",
           "code": "\nimport torch\ntorch.manual_seed(0)\nc, r, rc, rr = torch.randn(4), torch.randn(4), torch.randn(4), torch.randn(4)\nl1 = {fn}(c, r, rc, rr, beta=0.1)\nl2 = {fn}(c, r, rc, rr, beta=1.0)\nassert not torch.allclose(l1, l2), 'Different beta should give different loss'\n"
+        },
+        {
+          "name": "Extreme preference logits stay finite",
+          "code": "\nimport torch\nchosen = torch.tensor([-1000.0], requires_grad=True)\nrejected = torch.tensor([0.0], requires_grad=True)\nloss = {fn}(chosen, rejected, torch.zeros(1), torch.zeros(1), beta=1.0)\nassert torch.isfinite(loss) and abs(loss.item() - 1000.0) < 1e-3\nloss.backward()\nassert torch.isfinite(chosen.grad).all() and torch.isfinite(rejected.grad).all()\n"
+        },
+        {
+          "name": "Reference log-probs are detached",
+          "code": "\nimport torch\nc = torch.tensor([-0.2], requires_grad=True)\nr = torch.tensor([-0.5], requires_grad=True)\nrc = torch.tensor([-0.7], requires_grad=True)\nrr = torch.tensor([-0.4], requires_grad=True)\n{fn}(c, r, rc, rr).backward()\nassert c.grad is not None and r.grad is not None\nassert rc.grad is None and rr.grad is None\n"
         }
       ]
     },
@@ -1151,6 +1159,10 @@
         {
           "name": "Gradient flows to new_logps only",
           "code": "\nimport torch\nnew_logps = torch.randn(8, requires_grad=True)\nold_logps = torch.randn(8, requires_grad=True)\nadvantages = torch.randn(8, requires_grad=True)\nloss = {fn}(new_logps, old_logps, advantages)\nloss.backward()\nassert new_logps.grad is not None, 'Gradients should flow through new_logps'\nassert old_logps.grad is None, 'Gradients should not flow through old_logps (treat as constant baseline)'\nassert advantages.grad is None, 'Gradients should not flow through advantages (treat as constant advantages)'\n"
+        },
+        {
+          "name": "Sign-dependent clipping keeps correction gradients",
+          "code": "\nimport torch\nold_logps = torch.zeros(4)\nratios = torch.tensor([1.5, 0.6, 0.6, 1.5])\nnew_logps = ratios.log().detach().requires_grad_(True)\nadv = torch.tensor([1.0, 1.0, -1.0, -1.0])\n{fn}(new_logps, old_logps, adv, clip_ratio=0.2).backward()\ngrad = new_logps.grad\nassert abs(grad[0].item()) < 1e-7, \"A>0, r>upper clipped\"\nassert abs(grad[1].item()) > 1e-5, \"A>0, r<lower correction gradient\"\nassert abs(grad[2].item()) < 1e-7, \"A<0, r<lower clipped\"\nassert abs(grad[3].item()) > 1e-5, \"A<0, r>upper correction gradient\"\n"
         }
       ]
     },
@@ -1891,10 +1903,10 @@
       "titleZh": "Bradley-Terry 奖励模型",
       "difficulty": "Medium",
       "functionName": "reward_model_loss",
-      "hint": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = -log(1 / (1 + exp(-margin))).mean()  (manual sigmoid)",
-      "hintZh": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = -log(1 / (1 + exp(-margin))).mean()  (手动 sigmoid)",
-      "descriptionEn": "Implement the canonical RLHF reward model training loss based on the Bradley-Terry preference model.\n\nGiven hidden states for chosen and rejected responses, project them to scalar rewards and compute the preference loss.\n\n**Signature:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**Parameters:**\n- `chosen_hidden` — last-token hidden states for chosen responses (B, D)\n- `rejected_hidden` — last-token hidden states for rejected responses (B, D)\n- `reward_head` — linear projection to scalar reward (D, 1)\n\n**Returns:** scalar loss tensor\n\n**Formula:**\n1. `r_chosen = chosen_hidden @ reward_head` — shape (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — shape (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**Constraint:** implement sigmoid manually — `σ(x) = 1 / (1 + exp(-x))` — do not use library sigmoid functions.",
-      "descriptionZh": "实现基于 Bradley-Terry 偏好模型的标准 RLHF 奖励模型训练损失。\n\n给定选中和拒绝响应的隐藏状态，将其投影为标量奖励并计算偏好损失。\n\n**签名:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**参数:**\n- `chosen_hidden` — 选中响应的最后一个 token 隐藏状态 (B, D)\n- `rejected_hidden` — 拒绝响应的最后一个 token 隐藏状态 (B, D)\n- `reward_head` — 投影到标量奖励的线性层权重 (D, 1)\n\n**返回:** 标量损失张量\n\n**公式:**\n1. `r_chosen = chosen_hidden @ reward_head` — 形状 (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — 形状 (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**约束:** 手动实现 sigmoid — `σ(x) = 1 / (1 + exp(-x))` — 不得使用库函数。",
+      "hint": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = logaddexp(0, -margin).mean()  (stable negative log-sigmoid)",
+      "hintZh": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = logaddexp(0, -margin).mean()（数值稳定）",
+      "descriptionEn": "Implement the canonical RLHF reward model training loss based on the Bradley-Terry preference model.\n\nGiven hidden states for chosen and rejected responses, project them to scalar rewards and compute the preference loss.\n\n**Signature:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**Parameters:**\n- `chosen_hidden` — last-token hidden states for chosen responses (B, D)\n- `rejected_hidden` — last-token hidden states for rejected responses (B, D)\n- `reward_head` — linear projection to scalar reward (D, 1)\n\n**Returns:** scalar loss tensor\n\n**Formula:**\n1. `r_chosen = chosen_hidden @ reward_head` — shape (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — shape (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**Constraint:** compute the equivalent negative log-sigmoid stably (e.g. `torch.logaddexp(0, -margin)` or `F.softplus(-margin)`); direct `log(sigmoid(x))` can overflow/underflow.",
+      "descriptionZh": "实现基于 Bradley-Terry 偏好模型的标准 RLHF 奖励模型训练损失。\n\n给定选中和拒绝响应的隐藏状态，将其投影为标量奖励并计算偏好损失。\n\n**签名:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**参数:**\n- `chosen_hidden` — 选中响应的最后一个 token 隐藏状态 (B, D)\n- `rejected_hidden` — 拒绝响应的最后一个 token 隐藏状态 (B, D)\n- `reward_head` — 投影到标量奖励的线性层权重 (D, 1)\n\n**返回:** 标量损失张量\n\n**公式:**\n1. `r_chosen = chosen_hidden @ reward_head` — 形状 (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — 形状 (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**约束:** 稳定计算等价的负 log-sigmoid（如 `torch.logaddexp(0, -margin)` 或 `F.softplus(-margin)`）；直接计算 `log(sigmoid(x))` 可能溢出或下溢。",
       "tests": [
         {
           "name": "Returns scalar",
@@ -1915,6 +1927,10 @@
         {
           "name": "Larger margin -> lower loss",
           "code": "\nimport torch\ntorch.manual_seed(4)\nB, D = 8, 16\nhead = torch.ones(D, 1) / D\nbase = torch.zeros(B, D)\n# small margin\nchosen_small = base + 0.5\nrejected_small = base - 0.5\nloss_small = {fn}(chosen_small, rejected_small, head)\n# large margin\nchosen_large = base + 5.0\nrejected_large = base - 5.0\nloss_large = {fn}(chosen_large, rejected_large, head)\nassert loss_large.item() < loss_small.item(), 'Larger margin should yield lower loss'\n"
+        },
+        {
+          "name": "Extreme negative margin has finite loss and gradients",
+          "code": "\nimport torch\nchosen = torch.tensor([[-1000.0]], requires_grad=True)\nrejected = torch.tensor([[0.0]], requires_grad=True)\nhead = torch.tensor([[1.0]], requires_grad=True)\nloss = {fn}(chosen, rejected, head)\nassert torch.isfinite(loss) and abs(loss.item() - 1000.0) < 1e-3\nloss.backward()\nassert torch.isfinite(chosen.grad).all() and torch.isfinite(head.grad).all()\n"
         }
       ]
     },
@@ -1981,8 +1997,8 @@
     {
       "id": "ppo_full_loss",
       "type": "code",
-      "title": "PPO Clipped Policy Loss with GAE",
-      "titleZh": "PPO 裁剪策略损失（内置 GAE）",
+      "title": "PPO Clipped Policy Loss + GAE (No Value/Entropy)",
+      "titleZh": "PPO 裁剪策略损失与 GAE（不含价值/熵损失）",
       "difficulty": "Hard",
       "functionName": "ppo_full_loss",
       "hint": "1. detach old_logps, rewards, values, and dones before GAE\n2. T = rewards.shape[-1]; batch dimensions are leading dimensions\n3. compute GAE by iterating with for t in reversed(range(T))\n4. ratio = exp(new_logps - old_logps.detach())\n5. return -mean(min(ratio*A, clamp(ratio, 1±clip_ratio)*A))",
@@ -2009,6 +2025,10 @@
         {
           "name": "Gradient flows through new_logps only",
           "code": "\nimport torch\nnew_logps = torch.randn(4, 3, requires_grad=True)\nold_logps = torch.randn(4, 3, requires_grad=True)\nrewards = torch.randn(4, 3, requires_grad=True)\nvalues = torch.randn(4, 4, requires_grad=True)\ndones = torch.zeros(4, 3)\nloss = {fn}(new_logps, old_logps, rewards, values, dones)\nloss.backward()\nassert new_logps.grad is not None, 'Actor gradients should flow through new_logps'\nassert old_logps.grad is None, 'old_logps should be treated as rollout constants'\nassert rewards.grad is None, 'rewards should be treated as rollout constants'\nassert values.grad is None, 'values should be treated as rollout constants for GAE'\n"
+        },
+        {
+          "name": "Negative-advantage lower clipping suppresses gradient",
+          "code": "\nimport torch\nratios = torch.tensor([0.6, 1.5])\nnew = ratios.log().detach().requires_grad_(True)\nold = torch.zeros(2)\nrewards = torch.tensor([-1.0, 1.0])\nvalues = torch.zeros(3)\ndones = torch.tensor([True, True])\n{fn}(new, old, rewards, values, dones, gamma=1.0, lam=1.0, clip_ratio=0.2).backward()\nassert abs(new.grad[0].item()) < 1e-7\nassert abs(new.grad[1].item()) < 1e-7\n"
         }
       ]
     },

@@ -535,7 +535,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def dpo_loss(policy_chosen_logps, policy_rejected_logps,\n             ref_chosen_logps, ref_rejected_logps, beta=0.1):\n    chosen_rewards = beta * (policy_chosen_logps - ref_chosen_logps)\n    rejected_rewards = beta * (policy_rejected_logps - ref_rejected_logps)\n    diff = chosen_rewards - rejected_rewards\n    return -torch.log(torch.sigmoid(diff)).mean()",
+        "source": "def dpo_loss(policy_chosen_logps, policy_rejected_logps,\n             ref_chosen_logps, ref_rejected_logps, beta=0.1):\n    chosen = policy_chosen_logps - ref_chosen_logps.detach()\n    rejected = policy_rejected_logps - ref_rejected_logps.detach()\n    preference_logit = beta * (chosen - rejected)\n    return F.softplus(-preference_logit).mean()",
         "role": "solution"
       },
       {
@@ -871,7 +871,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def reward_model_loss(chosen_hidden, rejected_hidden, reward_head):\n    r_chosen = (chosen_hidden @ reward_head).squeeze(-1)     # (B,)\n    r_rejected = (rejected_hidden @ reward_head).squeeze(-1) # (B,)\n    margin = r_chosen - r_rejected\n    # manual log-sigmoid: log(1/(1+exp(-x))) = -log(1+exp(-x))\n    loss = -torch.log(1.0 / (1.0 + torch.exp(-margin))).mean()\n    return loss",
+        "source": "def reward_model_loss(chosen_hidden, rejected_hidden, reward_head):\n    chosen = (chosen_hidden @ reward_head).squeeze(-1)\n    rejected = (rejected_hidden @ reward_head).squeeze(-1)\n    margin = chosen - rejected\n    # -log(sigmoid(margin)) = log(1 + exp(-margin)), evaluated stably.\n    return torch.logaddexp(torch.zeros_like(margin), -margin).mean()",
         "role": "solution"
       },
       {

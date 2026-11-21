@@ -50,6 +50,22 @@ TASK = {
             "assert old_logps.grad is None, 'Gradients should not flow through old_logps (treat as constant baseline)'\n"
             "assert advantages.grad is None, 'Gradients should not flow through advantages (treat as constant advantages)'\n"
         },
+        {
+            "name": "Sign-dependent clipping keeps correction gradients",
+            "code": """
+import torch
+old_logps = torch.zeros(4)
+ratios = torch.tensor([1.5, 0.6, 0.6, 1.5])
+new_logps = ratios.log().detach().requires_grad_(True)
+adv = torch.tensor([1.0, 1.0, -1.0, -1.0])
+{fn}(new_logps, old_logps, adv, clip_ratio=0.2).backward()
+grad = new_logps.grad
+assert abs(grad[0].item()) < 1e-7, "A>0, r>upper clipped"
+assert abs(grad[1].item()) > 1e-5, "A>0, r<lower correction gradient"
+assert abs(grad[2].item()) < 1e-7, "A<0, r<lower clipped"
+assert abs(grad[3].item()) > 1e-5, "A<0, r>upper correction gradient"
+""",
+        },
     ],
     "solution": '''def ppo_loss(new_logps: Tensor, old_logps: Tensor, advantages: Tensor,
              clip_ratio: float = 0.2) -> Tensor:

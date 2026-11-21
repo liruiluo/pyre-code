@@ -4,11 +4,11 @@ TASK = {
     "title": "Bradley-Terry Reward Model Loss",
     "title_zh": "Bradley-Terry 奖励模型",
     "difficulty": "Medium",
-    "description_en": "Implement the canonical RLHF reward model training loss based on the Bradley-Terry preference model.\n\nGiven hidden states for chosen and rejected responses, project them to scalar rewards and compute the preference loss.\n\n**Signature:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**Parameters:**\n- `chosen_hidden` — last-token hidden states for chosen responses (B, D)\n- `rejected_hidden` — last-token hidden states for rejected responses (B, D)\n- `reward_head` — linear projection to scalar reward (D, 1)\n\n**Returns:** scalar loss tensor\n\n**Formula:**\n1. `r_chosen = chosen_hidden @ reward_head` — shape (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — shape (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**Constraint:** implement sigmoid manually — `σ(x) = 1 / (1 + exp(-x))` — do not use library sigmoid functions.",
-    "description_zh": "实现基于 Bradley-Terry 偏好模型的标准 RLHF 奖励模型训练损失。\n\n给定选中和拒绝响应的隐藏状态，将其投影为标量奖励并计算偏好损失。\n\n**签名:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**参数:**\n- `chosen_hidden` — 选中响应的最后一个 token 隐藏状态 (B, D)\n- `rejected_hidden` — 拒绝响应的最后一个 token 隐藏状态 (B, D)\n- `reward_head` — 投影到标量奖励的线性层权重 (D, 1)\n\n**返回:** 标量损失张量\n\n**公式:**\n1. `r_chosen = chosen_hidden @ reward_head` — 形状 (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — 形状 (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**约束:** 手动实现 sigmoid — `σ(x) = 1 / (1 + exp(-x))` — 不得使用库函数。",
+    "description_en": "Implement the canonical RLHF reward model training loss based on the Bradley-Terry preference model.\n\nGiven hidden states for chosen and rejected responses, project them to scalar rewards and compute the preference loss.\n\n**Signature:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**Parameters:**\n- `chosen_hidden` — last-token hidden states for chosen responses (B, D)\n- `rejected_hidden` — last-token hidden states for rejected responses (B, D)\n- `reward_head` — linear projection to scalar reward (D, 1)\n\n**Returns:** scalar loss tensor\n\n**Formula:**\n1. `r_chosen = chosen_hidden @ reward_head` — shape (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — shape (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**Constraint:** compute the equivalent negative log-sigmoid stably (e.g. `torch.logaddexp(0, -margin)` or `F.softplus(-margin)`); direct `log(sigmoid(x))` can overflow/underflow.",
+    "description_zh": "实现基于 Bradley-Terry 偏好模型的标准 RLHF 奖励模型训练损失。\n\n给定选中和拒绝响应的隐藏状态，将其投影为标量奖励并计算偏好损失。\n\n**签名:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**参数:**\n- `chosen_hidden` — 选中响应的最后一个 token 隐藏状态 (B, D)\n- `rejected_hidden` — 拒绝响应的最后一个 token 隐藏状态 (B, D)\n- `reward_head` — 投影到标量奖励的线性层权重 (D, 1)\n\n**返回:** 标量损失张量\n\n**公式:**\n1. `r_chosen = chosen_hidden @ reward_head` — 形状 (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — 形状 (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**约束:** 稳定计算等价的负 log-sigmoid（如 `torch.logaddexp(0, -margin)` 或 `F.softplus(-margin)`）；直接计算 `log(sigmoid(x))` 可能溢出或下溢。",
     "function_name": "reward_model_loss",
-    "hint": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = -log(1 / (1 + exp(-margin))).mean()  (manual sigmoid)",
-    "hint_zh": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = -log(1 / (1 + exp(-margin))).mean()  (手动 sigmoid)",
+    "hint": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = logaddexp(0, -margin).mean()  (stable negative log-sigmoid)",
+    "hint_zh": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = logaddexp(0, -margin).mean()（数值稳定）",
     "tests": [
         {
             "name": "Returns scalar",
@@ -30,14 +30,26 @@ TASK = {
             "name": "Larger margin -> lower loss",
             "code": "\nimport torch\ntorch.manual_seed(4)\nB, D = 8, 16\nhead = torch.ones(D, 1) / D\nbase = torch.zeros(B, D)\n# small margin\nchosen_small = base + 0.5\nrejected_small = base - 0.5\nloss_small = {fn}(chosen_small, rejected_small, head)\n# large margin\nchosen_large = base + 5.0\nrejected_large = base - 5.0\nloss_large = {fn}(chosen_large, rejected_large, head)\nassert loss_large.item() < loss_small.item(), 'Larger margin should yield lower loss'\n"
         }
+        {
+            "name": "Extreme negative margin has finite loss and gradients",
+            "code": """
+import torch
+chosen = torch.tensor([[-1000.0]], requires_grad=True)
+rejected = torch.tensor([[0.0]], requires_grad=True)
+head = torch.tensor([[1.0]], requires_grad=True)
+loss = {fn}(chosen, rejected, head)
+assert torch.isfinite(loss) and abs(loss.item() - 1000.0) < 1e-3
+loss.backward()
+assert torch.isfinite(chosen.grad).all() and torch.isfinite(head.grad).all()
+""",
+        },
     ],
     "solution": '''def reward_model_loss(chosen_hidden, rejected_hidden, reward_head):
-    r_chosen = (chosen_hidden @ reward_head).squeeze(-1)     # (B,)
-    r_rejected = (rejected_hidden @ reward_head).squeeze(-1) # (B,)
-    margin = r_chosen - r_rejected
-    # manual log-sigmoid: log(1/(1+exp(-x))) = -log(1+exp(-x))
-    loss = -torch.log(1.0 / (1.0 + torch.exp(-margin))).mean()
-    return loss''',
+    chosen = (chosen_hidden @ reward_head).squeeze(-1)
+    rejected = (rejected_hidden @ reward_head).squeeze(-1)
+    margin = chosen - rejected
+    # -log(sigmoid(margin)) = log(1 + exp(-margin)), evaluated stably.
+    return torch.logaddexp(torch.zeros_like(margin), -margin).mean()''',
     "demo": """torch.manual_seed(0)
 
 B, D = 8, 64
