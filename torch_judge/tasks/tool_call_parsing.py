@@ -64,14 +64,23 @@ calls = {fn}('<tool_call>\\n{"name": "echo", "arguments": {"text": "hello world"
 assert calls == [{'name': 'echo', 'arguments': {'text': 'hello world'}}]
 """,
         },
+        {
+            "name": "Inline call and whitespace around JSON",
+            "code": """
+text = '<tool_call>{"name":"echo","arguments":{"text":"ok"}}</tool_call>' + '<tool_call>  {"name":"ping"}  </tool_call>'
+assert {fn}(text) == [{"name":"echo","arguments":{"text":"ok"}},{"name":"ping","arguments":{}}]
+""",
+        },
     ],
     "solution": '''import json
-import re
-
 
 def parse_tool_calls(text):
     calls = []
-    for body in re.findall(r"<tool_call>\\n(.*?)</tool_call>", text, re.DOTALL):
+    # Parse tag-delimited JSON; no newline requirement inside the opening tag.
+    for chunk in text.split("<tool_call>")[1:]:
+        if "</tool_call>" not in chunk:
+            continue
+        body = chunk.split("</tool_call>", 1)[0].strip()
         try:
             obj = json.loads(body)
         except (json.JSONDecodeError, ValueError):

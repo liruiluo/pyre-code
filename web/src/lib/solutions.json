@@ -997,7 +997,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import json\nimport re\n\n\ndef parse_tool_calls(text):\n    calls = []\n    for body in re.findall(r\"<tool_call>\\n(.*?)</tool_call>\", text, re.DOTALL):\n        try:\n            obj = json.loads(body)\n        except (json.JSONDecodeError, ValueError):\n            continue\n        if not isinstance(obj, dict):\n            continue\n        name = obj.get(\"name\")\n        arguments = obj.get(\"arguments\", {})\n        if not isinstance(name, str) or not isinstance(arguments, dict):\n            continue\n        calls.append({\"name\": name, \"arguments\": arguments})\n    return calls",
+        "source": "import json\n\ndef parse_tool_calls(text):\n    calls = []\n    # Parse tag-delimited JSON; no newline requirement inside the opening tag.\n    for chunk in text.split(\"<tool_call>\")[1:]:\n        if \"</tool_call>\" not in chunk:\n            continue\n        body = chunk.split(\"</tool_call>\", 1)[0].strip()\n        try:\n            obj = json.loads(body)\n        except (json.JSONDecodeError, ValueError):\n            continue\n        if not isinstance(obj, dict):\n            continue\n        name = obj.get(\"name\")\n        arguments = obj.get(\"arguments\", {})\n        if not isinstance(name, str) or not isinstance(arguments, dict):\n            continue\n        calls.append({\"name\": name, \"arguments\": arguments})\n    return calls",
         "role": "solution"
       },
       {
@@ -1053,7 +1053,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0):\n    if not action_spans:\n        return torch.zeros((), dtype=student_logits.dtype)\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    span_losses = [per_tok[start:end].mean() for start, end in action_spans]\n    return torch.stack(span_losses).mean() * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0):\n    if not action_spans:\n        return student_logits.sum() * 0.0\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)\n    per_token = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n    span_means = [per_token[start:end].mean() for start, end in action_spans]\n    return torch.stack(span_means).mean() * temperature ** 2",
         "role": "solution"
       },
       {

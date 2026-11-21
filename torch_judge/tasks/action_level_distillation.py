@@ -89,33 +89,47 @@ import torch
 torch.manual_seed(4)
 s = torch.randn(10, 5)
 t = torch.randn(10, 5)
-spans = [(0, 2), (8, 10)]
+spans = [(0, 1), (6, 10)]
 log_p = torch.log_softmax(s, dim=-1)
 p = log_p.exp()
 per_tok = (p * (log_p - torch.log_softmax(t, dim=-1))).sum(-1)
-flat = per_tok[[0, 1, 8, 9]].mean()
-span_norm = (per_tok[0:2].mean() + per_tok[8:10].mean()) / 2
+flat = per_tok[[0, 6, 7, 8, 9]].mean()
+span_norm = (per_tok[0:1].mean() + per_tok[6:10].mean()) / 2
 out = {fn}(s, t, spans)
 assert torch.allclose(out, span_norm, atol=1e-6)
-# flat and span-normalized coincide only when both spans have equal length
-if not torch.allclose(flat, span_norm, atol=1e-6):
-    pass  # same lengths here, but the assertion above is the real contract
+# Different action lengths produce genuinely different weightings.
+assert not torch.allclose(flat, span_norm, atol=1e-6)
+""",
+        },
+        {
+            "name": "Teacher stopped and empty-span zero connected to student",
+            "code": """
+import torch
+student = torch.randn(8, 7, requires_grad=True)
+teacher = torch.randn(8, 7, requires_grad=True)
+{fn}(student, teacher, [(1, 4), (5, 6)]).backward()
+assert student.grad is not None and student.grad.abs().sum() > 0
+assert teacher.grad is None
+student.grad = None
+zero = {fn}(student, teacher, [])
+assert zero.item() == 0.0 and zero.device == student.device
+zero.backward()
+assert student.grad is not None and torch.all(student.grad == 0)
 """,
         },
     ],
     "solution": '''import torch
 import torch.nn.functional as F
 
-
 def action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0):
     if not action_spans:
-        return torch.zeros((), dtype=student_logits.dtype)
-    log_p = F.log_softmax(student_logits / temperature, dim=-1)
-    p = log_p.exp()
-    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)
-    per_tok = (p * (log_p - log_t)).sum(dim=-1)
-    span_losses = [per_tok[start:end].mean() for start, end in action_spans]
-    return torch.stack(span_losses).mean() * (temperature ** 2)''',
+        return student_logits.sum() * 0.0
+    log_student = F.log_softmax(student_logits / temperature, dim=-1)
+    student_probs = log_student.exp()
+    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)
+    per_token = (student_probs * (log_student - log_teacher)).sum(dim=-1)
+    span_means = [per_token[start:end].mean() for start, end in action_spans]
+    return torch.stack(span_means).mean() * temperature ** 2''',
     "demo": """import torch
 torch.manual_seed(0)
 teacher = torch.randn(12, 8)
