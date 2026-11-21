@@ -40,7 +40,21 @@ def test_interview_path_contains_48_unique_registered_code_tasks():
 
 def test_problem_catalog_matches_python_task_definitions():
     actual = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-    assert actual == build_problem_catalog()
+    expected = build_problem_catalog()
+    if actual != expected:
+        for i, (stored, generated) in enumerate(zip(actual["problems"], expected["problems"])):
+            if stored != generated:
+                differences = [
+                    key for key in (set(stored) | set(generated))
+                    if stored.get(key) != generated.get(key)
+                ]
+                pytest.fail(
+                    f"Catalog mismatch at index {i}: stored={stored.get('id')}, "
+                    f"generated={generated.get('id')}; fields={differences}; "
+                    f"sample={[(k, str(stored.get(k))[:140], str(generated.get(k))[:140]) for k in differences[:2]]}"
+                )
+        pytest.fail("Catalog mismatch in size or structure")
+    assert actual == expected
 
 
 def test_reference_solutions_match_python_task_definitions():
