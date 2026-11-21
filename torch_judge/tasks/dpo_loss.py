@@ -29,7 +29,7 @@ TASK = {
         {
             "name": "Beta scaling",
             "code": "\nimport torch\ntorch.manual_seed(0)\nc, r, rc, rr = torch.randn(4), torch.randn(4), torch.randn(4), torch.randn(4)\nl1 = {fn}(c, r, rc, rr, beta=0.1)\nl2 = {fn}(c, r, rc, rr, beta=1.0)\nassert not torch.allclose(l1, l2), 'Different beta should give different loss'\n"
-        }
+        },
         {
             "name": "Extreme preference logits stay finite",
             "code": """

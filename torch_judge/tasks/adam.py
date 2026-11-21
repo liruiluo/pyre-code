@@ -21,7 +21,7 @@ TASK = {
         {
             "name": "zero_grad works",
             "code": "\nimport torch\nw = torch.randn(4, requires_grad=True)\nopt = {fn}([w], lr=0.01)\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0, 'zero_grad should zero all gradients'\n"
-        }
+        },
         {
             "name": "Per-parameter step counts when gradients are missing",
             "code": """

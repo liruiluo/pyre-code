@@ -29,7 +29,7 @@ TASK = {
         {
             "name": "Larger margin -> lower loss",
             "code": "\nimport torch\ntorch.manual_seed(4)\nB, D = 8, 16\nhead = torch.ones(D, 1) / D\nbase = torch.zeros(B, D)\n# small margin\nchosen_small = base + 0.5\nrejected_small = base - 0.5\nloss_small = {fn}(chosen_small, rejected_small, head)\n# large margin\nchosen_large = base + 5.0\nrejected_large = base - 5.0\nloss_large = {fn}(chosen_large, rejected_large, head)\nassert loss_large.item() < loss_small.item(), 'Larger margin should yield lower loss'\n"
-        }
+        },
         {
             "name": "Extreme negative margin has finite loss and gradients",
             "code": """
