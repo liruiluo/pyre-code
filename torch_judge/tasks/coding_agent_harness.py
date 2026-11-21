@@ -12,7 +12,7 @@ TASK = {
     "tests": [
         {
             "name": "Direct final answer without any Bash command",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -51,7 +51,7 @@ assert len(client.responses.requests) == 1
         },
         {
             "name": "One Bash call and final answer, correct call_id",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -97,7 +97,7 @@ assert json.loads(output["output"])["exit_code"] == 0
         },
         {
             "name": "Parallel tool calls are all executed and forwarded together",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -139,7 +139,7 @@ assert [json.loads(x["output"])["stdout"] for x in request["input"]] == commands
         },
         {
             "name": "Tool result, failing test and second correction cycle",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -183,7 +183,7 @@ assert json.loads(client.responses.requests[1]["input"][0]["output"])["exit_code
         },
         {
             "name": "Malformed arguments and unknown tools never run Bash",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -225,7 +225,7 @@ assert [x["call_id"] for x in results] == ["c1", "c2", "c3"]
         },
         {
             "name": "Bash exceptions are returned to model, not raised",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -260,7 +260,7 @@ assert "TimeoutError" in json.loads(out["output"])["error"]
         },
         {
             "name": "Max steps prevents unbounded tool loops",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
@@ -301,7 +301,7 @@ assert len(client.responses.requests) == 3
         },
         {
             "name": "Invalid maximum steps rejected without model request",
-            "code": """
+            "code": r"""
 import json
 from types import SimpleNamespace as NS
 
