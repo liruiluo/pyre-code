@@ -4,11 +4,11 @@ TASK = {
     "title": "Adam Optimizer",
     "title_zh": "Adam 优化器",
     "difficulty": "Medium",
-    "description_en": "Implement the Adam optimizer from scratch.\n\nAdam combines momentum (1st moment) and RMSProp (2nd moment) with bias correction for adaptive per-parameter learning rates.\n\n**Signature:** `MyAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8)`\n\n**Methods:**\n- `step()` — update parameters using bias-corrected moments\n- `zero_grad()` — zero all parameter gradients\n\n**Constraints:**\n- Must match `torch.optim.Adam` numerically\n- Bias correction: `m_hat = m / (1 - beta1^t)`",
-    "description_zh": "从零实现 Adam 优化器。\n\nAdam 结合了动量（一阶矩）和 RMSProp（二阶矩），并通过偏差校正实现自适应的逐参数学习率。\n\n**签名:** `MyAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8)`\n\n**方法:**\n- `step()` — 使用偏差校正后的矩更新参数\n- `zero_grad()` — 将所有参数梯度清零\n\n**约束:**\n- 必须与 `torch.optim.Adam` 数值一致\n- 偏差校正: `m_hat = m / (1 - beta1^t)`",
+    "description_en": "Implement the Adam optimizer from scratch.\n\nAdam combines momentum (1st moment) and RMSProp (2nd moment) with bias correction for adaptive per-parameter learning rates.\n\n**Signature:** `MyAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8)`\n\n**Methods:**\n- `step()` — update parameters using bias-corrected moments\n- `zero_grad()` — zero all parameter gradients\n\n**Constraints:**\n- Must match `torch.optim.Adam` numerically\n- Bias correction: `m_hat = m / (1 - beta1^t)`\n- `t` is per-parameter: only increment a parameter's counter on steps where it has a gradient (this is what `torch.optim.Adam` does)",
+    "description_zh": "从零实现 Adam 优化器。\n\nAdam 结合了动量（一阶矩）和 RMSProp（二阶矩），并通过偏差校正实现自适应的逐参数学习率。\n\n**签名:** `MyAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8)`\n\n**方法:**\n- `step()` — 使用偏差校正后的矩更新参数\n- `zero_grad()` — 将所有参数梯度清零\n\n**约束:**\n- 必须与 `torch.optim.Adam` 数值一致\n- 偏差校正: `m_hat = m / (1 - beta1^t)`\n- `t` 是**逐参数**计数：某参数该步 `grad is None` 就不给它 +1（与 `torch.optim.Adam` 一致）",
     "function_name": "MyAdam",
-    "hint": "1. m = β1·m + (1-β1)·g,  v = β2·v + (1-β2)·g²\n2. Bias-correct: m̂ = m/(1-β1ᵗ),  v̂ = v/(1-β2ᵗ)\n3. p -= lr · m̂ / (√v̂ + ε)",
-    "hint_zh": "1. m = β1·m + (1-β1)·g,  v = β2·v + (1-β2)·g²\n2. 偏差校正：m̂ = m/(1-β1ᵗ),  v̂ = v/(1-β2ᵗ)\n3. p -= lr · m̂ / (√v̂ + ε)",
+    "hint": "1. m = β1·m + (1-β1)·g,  v = β2·v + (1-β2)·g²\n2. Bias-correct per parameter: m̂ = m/(1-β1^tᵢ),  v̂ = v/(1-β2^tᵢ)  — tᵢ 只数该参数有梯度的步数\n3. p -= lr · m̂ / (√v̂ + ε)",
+    "hint_zh": "1. m = β1·m + (1-β1)·g,  v = β2·v + (1-β2)·g²\n2. 偏差校正（逐参数）：m̂ = m/(1-β1^tᵢ),  v̂ = v/(1-β2^tᵢ) —— tᵢ 只数该参数有梯度的步数\n3. p -= lr · m̂ / (√v̂ + ε)",
     "tests": [
         {
             "name": "Parameters change after step",

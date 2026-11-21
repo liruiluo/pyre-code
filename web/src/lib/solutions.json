@@ -615,6 +615,25 @@
       }
     ]
   },
+  "kl_estimators_k1_k2_k3": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\ndef kl_estimators_k1_k2_k3(policy_logps, ref_logps, mask=None):\n    # Samples are assumed drawn from policy, estimating KL(policy || ref).\n    d = policy_logps - ref_logps.detach()\n    k1 = d\n    k2 = 0.5 * d.square()\n    k3 = torch.expm1(-d) + d\n    if mask is None:\n        return k1.mean(), k2.mean(), k3.mean()\n    valid = mask.to(device=d.device, dtype=d.dtype).detach()\n    denom = valid.sum().clamp_min(1)\n    return ((k1 * valid).sum() / denom,\n            (k2 * valid).sum() / denom,\n            (k3 * valid).sum() / denom)",
+        "role": "solution"
+      },
+      {
+        "type": "markdown",
+        "source": "The data are assumed sampled from policy π. For d = logπ - logπ_ref, k1=d, k2=d²/2, k3=expm1(-d)+d. k1 and k3 are unbiased KL(π||ref) estimators under on-policy sampling; k2 is a second-order approximation. This exercise estimates KL values; autodiff through a tokenwise estimator alone is not always the gradient of the full KL objective.",
+        "role": "explanation"
+      },
+      {
+        "type": "code",
+        "source": "import torch\np = torch.tensor([-0.2, -0.4, -0.8])\nr = torch.tensor([-0.3, -0.5, -0.6])\nprint('k1, k2, k3:', kl_estimators_k1_k2_k3(p, r))",
+        "role": "demo"
+      }
+    ]
+  },
   "kl_penalty": {
     "cells": [
       {
@@ -1521,25 +1540,6 @@
       {
         "type": "code",
         "source": "import torch\npositions = torch.arange(0, 1024, 16)\ncos, sin = yarn_rope_cache(positions, 32, original_max_position=4096, scale_factor=8.0)\nprint('cos shape:', tuple(cos.shape))\nprint('position 1000, dims 0/4/12:', cos[62, 0].item(), cos[62, 8].item(), cos[62, 24].item())",
-        "role": "demo"
-      }
-    ]
-  },
-  "kl_estimators_k1_k2_k3": {
-    "cells": [
-      {
-        "type": "code",
-        "source": "import torch\n\ndef kl_estimators_k1_k2_k3(policy_logps, ref_logps, mask=None):\n    # Samples are assumed drawn from policy, estimating KL(policy || ref).\n    d = policy_logps - ref_logps.detach()\n    k1 = d\n    k2 = 0.5 * d.square()\n    k3 = torch.expm1(-d) + d\n    if mask is None:\n        return k1.mean(), k2.mean(), k3.mean()\n    valid = mask.to(device=d.device, dtype=d.dtype).detach()\n    denom = valid.sum().clamp_min(1)\n    return ((k1 * valid).sum() / denom,\n            (k2 * valid).sum() / denom,\n            (k3 * valid).sum() / denom)",
-        "role": "solution"
-      },
-      {
-        "type": "markdown",
-        "source": "The data are assumed sampled from policy π. For d = logπ - logπ_ref, k1=d, k2=d²/2, k3=expm1(-d)+d. k1 and k3 are unbiased KL(π||ref) estimators under on-policy sampling; k2 is a second-order approximation. This exercise estimates KL values; autodiff through a tokenwise estimator alone is not always the gradient of the full KL objective.",
-        "role": "explanation"
-      },
-      {
-        "type": "code",
-        "source": "import torch\np = torch.tensor([-0.2, -0.4, -0.8])\nr = torch.tensor([-0.3, -0.5, -0.6])\nprint('k1, k2, k3:', kl_estimators_k1_k2_k3(p, r))",
         "role": "demo"
       }
     ]
