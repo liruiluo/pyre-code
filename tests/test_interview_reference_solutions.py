@@ -48,6 +48,17 @@ def test_problem_catalog_matches_python_task_definitions():
                     key for key in (set(stored) | set(generated))
                     if stored.get(key) != generated.get(key)
                 ]
+                if "tests" in differences:
+                    mismatch = []
+                    for j, (st, gn) in enumerate(zip(stored["tests"], generated["tests"])):
+                        if st != gn:
+                            left, right = st["code"], gn["code"]
+                            where = next((k for k, (x, y) in enumerate(zip(left, right)) if x != y),
+                                         min(len(left), len(right)))
+                            mismatch.append((j, where, repr(left[max(0, where-20):where+70]),
+                                             repr(right[max(0, where-20):where+70]),
+                                             len(left), len(right)))
+                    pytest.fail(f"Test-string mismatch: {mismatch}")
                 pytest.fail(
                     f"Catalog mismatch at index {i}: stored={stored.get('id')}, "
                     f"generated={generated.get('id')}; fields={differences}; "
