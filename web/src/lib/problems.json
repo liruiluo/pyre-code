@@ -173,6 +173,10 @@
         {
           "name": "Preserves direction",
           "code": "\nimport torch\ntorch.manual_seed(0)\np = torch.randn(100, requires_grad=True)\n(p * 10).sum().backward()\ndir_before = p.grad / p.grad.norm()\n{fn}([p], max_norm=1.0)\ndir_after = p.grad / p.grad.norm()\nassert torch.allclose(dir_before, dir_after, atol=1e-5), 'Should preserve direction'\n"
+        },
+        {
+          "name": "Missing gradients and max_norm=0",
+          "code": "\nimport torch\np = torch.tensor([2.0], requires_grad=True)\nassert {fn}([p], 1.0) == 0.0\np.grad = torch.tensor([3.0])\nnorm = {fn}([p], 0.0)\nassert abs(norm - 3.0) < 1e-6\nassert torch.equal(p.grad, torch.zeros_like(p.grad))\n"
         }
       ]
     },
@@ -469,6 +473,10 @@
         {
           "name": "Gradient flow",
           "code": "\nimport torch\nlayer = {fn}(8, 4)\nx = torch.randn(2, 8)\ny = layer.forward(x)\ny.sum().backward()\nassert layer.weight.grad is not None, 'weight.grad is None'\nassert layer.bias.grad is not None, 'bias.grad is None'\n"
+        },
+        {
+          "name": "Kaiming normal fan-in scaling",
+          "code": "\nimport torch, math\ntorch.manual_seed(0)\nlayer = {fn}(256, 512)\nassert abs(layer.weight.std().item() - math.sqrt(2.0 / 256)) < 0.01\n"
         }
       ]
     },
@@ -507,6 +515,10 @@
         {
           "name": "Closed-form uses no autograd",
           "code": "\nimport torch\nX = torch.randn(30, 2)\ny = X @ torch.tensor([1.0, 2.0]) + 0.5\nmodel = {fn}()\nw, b = model.closed_form(X, y)\nassert not w.requires_grad, 'Closed-form w should not require grad'\n"
+        },
+        {
+          "name": "float64 inputs work in all three methods",
+          "code": "\nimport torch\ntorch.manual_seed(9)\nX = torch.randn(60, 3, dtype=torch.float64)\nw_true = torch.tensor([1.2, -0.4, 0.7], dtype=torch.float64)\ny = X @ w_true + 0.8\nm = {fn}()\nfor method in (m.closed_form, m.gradient_descent, m.nn_linear):\n    kw = {} if method == m.closed_form else {\"lr\": 0.05, \"steps\": 600}\n    w, b = method(X, y, **kw)\n    assert w.dtype == X.dtype and b.dtype == X.dtype\n    assert torch.allclose(w, w_true, atol=0.08)\n    assert abs(b.item() - 0.8) < 0.08\n"
         }
       ]
     },
@@ -2203,8 +2215,8 @@
       "functionName": "sft_loss",
       "hint": "Use `F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=ignore_index)`.",
       "hintZh": "使用 `F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=ignore_index)`。",
-      "descriptionEn": "Implement the supervised fine-tuning (SFT) loss for language models.\n\nSFT usually trains only selected response tokens: prompt tokens are masked out with `ignore_index=-100`, and valid tokens use cross-entropy over the vocabulary.\n\n**Signature:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**Parameters:**\n- `logits` — model logits, shape `(B, T, V)`\n- `labels` — token labels, shape `(B, T)`, with ignored positions set to `ignore_index`\n\n**Returns:** scalar mean cross-entropy over non-ignored positions\n\n**Constraints:**\n- Flatten batch/time before cross-entropy\n- Ignored positions must not contribute to loss or gradients",
-      "descriptionZh": "实现语言模型监督微调（SFT）损失。\n\nSFT 通常只训练被选中的回复 token：prompt token 用 `ignore_index=-100` 遮掉，有效 token 在词表上做交叉熵。\n\n**签名:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**参数:**\n- `logits` — 模型 logits，形状 `(B, T, V)`\n- `labels` — token 标签，形状 `(B, T)`，忽略位置设为 `ignore_index`\n\n**返回:** 非忽略位置上的平均交叉熵标量\n\n**约束:**\n- 先展平 batch/time 再计算交叉熵\n- 被忽略位置不得贡献 loss 或梯度",
+      "descriptionEn": "Implement the supervised fine-tuning (SFT) loss for language models.\n\nSFT usually trains only selected response tokens: prompt tokens are masked out with `ignore_index=-100`, and valid tokens use cross-entropy over the vocabulary. Logits and labels are ALREADY ALIGNED in this exercise. For next-token causal LM training, shift them before calling this function (see `causal_lm_loss`).\n\n**Signature:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**Parameters:**\n- `logits` — model logits, shape `(B, T, V)`\n- `labels` — token labels, shape `(B, T)`, with ignored positions set to `ignore_index`\n\n**Returns:** scalar mean cross-entropy over non-ignored positions\n\n**Constraints:**\n- Flatten batch/time before cross-entropy\n- Ignored positions must not contribute to loss or gradients",
+      "descriptionZh": "实现语言模型监督微调（SFT）损失。\n\nSFT 通常只训练被选中的回复 token：prompt token 用 `ignore_index=-100` 遮掉，有效 token 在词表上做交叉熵。本题 logits 与 labels 已对齐；若直接使用原始 Causal LM logits，应先进行 next-token shift（见 `causal_lm_loss`）。\n\n**签名:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**参数:**\n- `logits` — 模型 logits，形状 `(B, T, V)`\n- `labels` — token 标签，形状 `(B, T)`，忽略位置设为 `ignore_index`\n\n**返回:** 非忽略位置上的平均交叉熵标量\n\n**约束:**\n- 先展平 batch/time 再计算交叉熵\n- 被忽略位置不得贡献 loss 或梯度",
       "tests": [
         {
           "name": "Matches F.cross_entropy with ignore_index",
@@ -2221,6 +2233,10 @@
         {
           "name": "Scalar output",
           "code": "\nimport torch\nout = {fn}(torch.randn(3, 5, 11), torch.randint(0, 11, (3, 5)))\nassert out.dim() == 0, 'Loss must be scalar'\n"
+        },
+        {
+          "name": "All ignored positions have connected zero loss",
+          "code": "\nimport torch\nlogits = torch.randn(2, 5, 11, requires_grad=True)\nlabels = torch.full((2, 5), -100, dtype=torch.long)\nloss = {fn}(logits, labels)\nassert loss.item() == 0.0\nloss.backward()\nassert logits.grad is not None and torch.all(logits.grad == 0)\n"
         }
       ]
     },
@@ -2549,6 +2565,10 @@
         {
           "name": "Gradient reaches used logits but not the final position",
           "code": "\nimport torch\ntorch.manual_seed(2)\nlogits = torch.randn(2, 4, 5, requires_grad=True)\nlabels = torch.randint(0, 5, (2, 4))\nloss = {fn}(logits, labels)\nloss.backward()\nassert logits.grad is not None, 'Missing gradient on logits'\nassert logits.grad[:, :-1, :].abs().sum() > 0, 'Used logits should receive gradient'\nassert torch.allclose(logits.grad[:, -1, :], torch.zeros_like(logits.grad[:, -1, :])), 'Final-position logits should be unused'\n"
+        },
+        {
+          "name": "All ignored targets have connected zero loss",
+          "code": "\nimport torch\nlogits = torch.randn(2, 4, 8, requires_grad=True)\nlabels = torch.full((2, 4), -100, dtype=torch.long)\nloss = {fn}(logits, labels)\nassert loss.item() == 0.0 and loss.device == logits.device\nloss.backward()\nassert logits.grad is not None and torch.all(logits.grad == 0)\n"
         }
       ]
     },

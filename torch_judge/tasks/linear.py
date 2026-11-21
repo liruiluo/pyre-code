@@ -45,10 +45,19 @@ assert layer.weight.grad is not None, 'weight.grad is None'
 assert layer.bias.grad is not None, 'bias.grad is None'
 """,
         },
+        {
+            "name": "Kaiming normal fan-in scaling",
+            "code": """
+import torch, math
+torch.manual_seed(0)
+layer = {fn}(256, 512)
+assert abs(layer.weight.std().item() - math.sqrt(2.0 / 256)) < 0.01
+""",
+        },
     ],
     "solution": '''class SimpleLinear:
     def __init__(self, in_features: int, out_features: int):
-        self.weight = torch.randn(out_features, in_features) * (1 / math.sqrt(in_features))
+        self.weight = torch.randn(out_features, in_features) * math.sqrt(2.0 / in_features)
         self.weight.requires_grad_(True)
         self.bias = torch.zeros(out_features, requires_grad=True)
 

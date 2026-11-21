@@ -87,7 +87,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def clip_grad_norm(parameters, max_norm):\n    parameters = [p for p in parameters if p.grad is not None]\n    total_norm = torch.sqrt(sum(p.grad.norm() ** 2 for p in parameters))\n    clip_coef = max_norm / (total_norm + 1e-6)\n    if clip_coef < 1:\n        for p in parameters:\n            p.grad.mul_(clip_coef)\n    return total_norm.item()",
+        "source": "def clip_grad_norm(parameters, max_norm):\n    if max_norm < 0:\n        raise ValueError(\"max_norm must be non-negative\")\n    grads = [p.grad for p in parameters if p.grad is not None]\n    if not grads:\n        return 0.0\n    total_norm = torch.sqrt(sum(g.detach().pow(2).sum() for g in grads))\n    scale = max_norm / (total_norm + 1e-6)\n    if scale < 1:\n        for grad in grads:\n            grad.mul_(scale)\n    return total_norm.item()",
         "role": "solution"
       },
       {
@@ -451,7 +451,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def causal_lm_loss(logits, labels, ignore_index=-100):\n    vocab_size = logits.shape[-1]\n    shift_logits = logits[:, :-1, :].contiguous()\n    shift_labels = labels[:, 1:].contiguous()\n    return F.cross_entropy(\n        shift_logits.view(-1, vocab_size),\n        shift_labels.view(-1),\n        ignore_index=ignore_index,\n    )",
+        "source": "def causal_lm_loss(logits, labels, ignore_index=-100):\n    v = logits.shape[-1]\n    shifted_logits = logits[:, :-1, :].reshape(-1, v)\n    shifted_labels = labels[:, 1:].reshape(-1)\n    if not (shifted_labels != ignore_index).any():\n        return shifted_logits.sum() * 0.0\n    return F.cross_entropy(shifted_logits, shifted_labels, ignore_index=ignore_index)",
         "role": "solution"
       },
       {
@@ -647,7 +647,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "class SimpleLinear:\n    def __init__(self, in_features: int, out_features: int):\n        self.weight = torch.randn(out_features, in_features) * (1 / math.sqrt(in_features))\n        self.weight.requires_grad_(True)\n        self.bias = torch.zeros(out_features, requires_grad=True)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        return x @ self.weight.T + self.bias",
+        "source": "class SimpleLinear:\n    def __init__(self, in_features: int, out_features: int):\n        self.weight = torch.randn(out_features, in_features) * math.sqrt(2.0 / in_features)\n        self.weight.requires_grad_(True)\n        self.bias = torch.zeros(out_features, requires_grad=True)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        return x @ self.weight.T + self.bias",
         "role": "solution"
       },
       {
@@ -661,7 +661,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "class LinearRegression:\n    def closed_form(self, X: torch.Tensor, y: torch.Tensor):\n        \"\"\"Normal equation via augmented matrix.\"\"\"\n        N, D = X.shape\n        # Augment X with ones column for bias\n        X_aug = torch.cat([X, torch.ones(N, 1)], dim=1)  # (N, D+1)\n        # Solve (X^T X) theta = X^T y\n        theta = torch.linalg.lstsq(X_aug, y).solution      # (D+1,)\n        w = theta[:D]\n        b = theta[D]\n        return w.detach(), b.detach()\n\n    def gradient_descent(self, X: torch.Tensor, y: torch.Tensor,\n                         lr: float = 0.01, steps: int = 1000):\n        \"\"\"Manual gradient computation — no autograd.\"\"\"\n        N, D = X.shape\n        w = torch.zeros(D)\n        b = torch.tensor(0.0)\n\n        for _ in range(steps):\n            pred = X @ w + b          # (N,)\n            error = pred - y           # (N,)\n            grad_w = (2.0 / N) * (X.T @ error)  # (D,)\n            grad_b = (2.0 / N) * error.sum()     # scalar\n            w = w - lr * grad_w\n            b = b - lr * grad_b\n\n        return w, b\n\n    def nn_linear(self, X: torch.Tensor, y: torch.Tensor,\n                  lr: float = 0.01, steps: int = 1000):\n        \"\"\"PyTorch nn.Linear with autograd training loop.\"\"\"\n        N, D = X.shape\n        layer = nn.Linear(D, 1)\n        optimizer = torch.optim.SGD(layer.parameters(), lr=lr)\n        loss_fn = nn.MSELoss()\n\n        for _ in range(steps):\n            optimizer.zero_grad()\n            pred = layer(X).squeeze(-1)  # (N,)\n            loss = loss_fn(pred, y)\n            loss.backward()\n            optimizer.step()\n\n        w = layer.weight.data.squeeze(0)  # (D,)\n        b = layer.bias.data.squeeze(0)    # scalar ()\n        return w, b",
+        "source": "class LinearRegression:\n    def closed_form(self, X: torch.Tensor, y: torch.Tensor):\n        n, d = X.shape\n        X_aug = torch.cat([X, torch.ones(n, 1, device=X.device, dtype=X.dtype)], dim=1)\n        theta = torch.linalg.lstsq(X_aug, y).solution\n        return theta[:d].detach(), theta[d].detach()\n\n    def gradient_descent(self, X: torch.Tensor, y: torch.Tensor, lr=0.01, steps=1000):\n        n, d = X.shape\n        w = torch.zeros(d, device=X.device, dtype=X.dtype)\n        b = torch.zeros((), device=X.device, dtype=X.dtype)\n        for _ in range(steps):\n            err = X @ w + b - y\n            w = w - lr * (2.0 / n) * (X.T @ err)\n            b = b - lr * (2.0 / n) * err.sum()\n        return w, b\n\n    def nn_linear(self, X: torch.Tensor, y: torch.Tensor, lr=0.01, steps=1000):\n        layer = nn.Linear(X.shape[1], 1, device=X.device, dtype=X.dtype)\n        optimizer = torch.optim.SGD(layer.parameters(), lr=lr)\n        for _ in range(steps):\n            optimizer.zero_grad()\n            loss = F.mse_loss(layer(X).squeeze(-1), y)\n            loss.backward()\n            optimizer.step()\n        return layer.weight.detach().squeeze(0).clone(), layer.bias.detach().squeeze(0).clone()",
         "role": "solution"
       },
       {
@@ -913,7 +913,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def sft_loss(logits, labels, ignore_index=-100):\n    vocab_size = logits.shape[-1]\n    return F.cross_entropy(\n        logits.reshape(-1, vocab_size),\n        labels.reshape(-1),\n        ignore_index=ignore_index,\n    )",
+        "source": "def sft_loss(logits, labels, ignore_index=-100):\n    v = logits.shape[-1]\n    flat_logits, flat_labels = logits.reshape(-1, v), labels.reshape(-1)\n    if not (flat_labels != ignore_index).any():\n        return flat_logits.sum() * 0.0\n    return F.cross_entropy(flat_logits, flat_labels, ignore_index=ignore_index)",
         "role": "solution"
       },
       {
