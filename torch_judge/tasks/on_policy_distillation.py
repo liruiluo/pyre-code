@@ -4,11 +4,11 @@ TASK = {
     "title": "On-Policy Distillation Loss (GKD)",
     "title_zh": "在线策略蒸馏损失（GKD）",
     "difficulty": "Hard",
-    "description_en": "Implement the core objective of on-policy knowledge distillation — the GKD recipe.\n\nThe tokens the student generated itself (from its own sampling distribution) carry the distribution mismatch the training must fix. The trajectory contains both student-generated tokens and foreign tokens — the prompt, environment observations, tool outputs. Per-token reverse KL `D_KL(student_t || teacher_t)` is computed ONLY at positions the student produced, averaged over those positions, scaled by `T^2`.\n\nTraining on the student's own rollout data is what makes this on-policy: the student never drifts onto inputs it would not itself visit, and the objective is the mode-seeking reverse KL at exactly those states.\n\n**Signature:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, T, V)`\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * mean over masked positions of D_KL(student_T || teacher_T)`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The denominator is the number of masked positions, not `B*T`\n- Logits at unmasked positions must not influence the loss",
-    "description_zh": "实现在线策略知识蒸馏的核心目标——GKD 配方。\n\n学生自己生成（从它自己的采样分布）的 token 承载着训练要修正的分布失配。轨迹里既有学生生成的 token，也有外来 token——提示词、环境观察、工具输出。逐 token 的反向 KL `D_KL(student_t || teacher_t)` 只在学生产出的位置计算，对这些位置求平均，再乘 `T^2`。\n\n在学生自己的 rollout 数据上训练，这才是“在线策略”：学生永远不会漂到它自己不会到达的输入上，目标函数也恰是在这些状态上的模式寻求型反向 KL。\n\n**签名:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, T, V)`\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * 被掩码位置的 D_KL(student_T || teacher_T) 平均`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 分母是掩码位置数，不是 `B*T`\n- 未掩码位置的 logits 不得影响损失",
+    "description_en": "Implement a GKD-style on-policy distillation example with a chosen reverse-KL objective. GKD-style methods may instead use forward KL, JSD or other divergences.\n\nThe tokens the student generated itself (from its own sampling distribution) carry the distribution mismatch the training must fix. The trajectory contains both student-generated tokens and foreign tokens — the prompt, environment observations, tool outputs. Per-token reverse KL `D_KL(student_t || teacher_t)` is computed ONLY at positions the student produced, averaged over those positions, scaled by `T^2`.\n\nTraining on the student's own rollout contexts is the on-policy aspect. This exercise assumes those contexts and a generated-token mask are already provided: it does NOT generate rollouts, and reverse KL is an independent design choice.\n\n**Signature:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, T, V)`\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * mean over masked positions of D_KL(student_T || teacher_T)`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The denominator is the number of masked positions, not `B*T`\n- Logits at unmasked positions must not influence the loss",
+    "description_zh": "实现一个以 Reverse KL 为选择的 GKD 类 On-Policy 蒸馏练习。GKD 类方法也可以采用 Forward KL、JSD 或其他散度。\n\n学生自己生成（从它自己的采样分布）的 token 承载着训练要修正的分布失配。轨迹里既有学生生成的 token，也有外来 token——提示词、环境观察、工具输出。逐 token 的反向 KL `D_KL(student_t || teacher_t)` 只在学生产出的位置计算，对这些位置求平均，再乘 `T^2`。\n\nOn-Policy 指使用学生自己的 rollout 上下文进行训练。本题假定 rollout 与 generated-token mask 已提供，本身不执行采样；Reverse KL 是独立于采样方式的另一项设计选择。\n\n**签名:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, T, V)`\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * 被掩码位置的 D_KL(student_T || teacher_T) 平均`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 分母是掩码位置数，不是 `B*T`\n- 未掩码位置的 logits 不得影响损失",
     "function_name": "on_policy_distillation_loss",
-    "hint": "Per-token reverse KL gives `(B, T)`; select with `kl[generated_mask]`, `.mean()` over the selection; guard `numel() == 0` and return `torch.zeros(())`.",
-    "hint_zh": "逐 token 反向 KL 得 `(B, T)`；用 `kl[generated_mask]` 选取后 `.mean()`；`numel() == 0` 时守卫返回 `torch.zeros(())`。",
+    "hint": "Per-token reverse KL gives `(B, T)`; select with `kl[generated_mask]`, `.mean()` over the selection; guard an empty mask with `student_logits.sum() * 0` to preserve device and gradient graph; detach teacher logits.",
+    "hint_zh": "逐 token 反向 KL 得 `(B, T)`；用 `kl[generated_mask]` 选取后 `.mean()`；空 mask 时返回 `student_logits.sum() * 0` 保持 device 与梯度图；teacher logits 需要 detach。",
     "tests": [
         {
             "name": "Zero when student matches teacher on generated tokens",
@@ -50,7 +50,7 @@ t = torch.randn(2, 4, 6)
 mask = torch.tensor([[True, False, True, False], [True, True, True, False]])
 base = {fn}(s, t, mask)
 s_perturbed = s.clone()
-s_perturbed[:, [1, 3]] += 50.0   # torch advanced indexing
+s_perturbed[~mask] = s_perturbed[~mask] + torch.randn_like(s_perturbed[~mask]) * 20.0
 out = {fn}(s_perturbed, t, mask)
 assert torch.allclose(base, out, atol=1e-5), 'Prompt/observation logits must not affect the loss'
 """,
@@ -88,26 +88,43 @@ torch.manual_seed(4)
 t = torch.randn(2, 4, 6)
 mask = torch.ones(2, 4, dtype=torch.bool)
 losses = []
+direction = torch.randn(2, 4, 6)
 for eps in (0.0, 0.5, 2.0):
-    s = t + eps * torch.randn(2, 4, 6)
+    s = t + eps * direction
     losses.append({fn}(s, t, mask).item())
 assert losses[0] < losses[1] < losses[2], f'Loss must grow with student drift: {losses}'
+""",
+        },
+        {
+            "name": "Teacher stop-grad and connected empty-mask zero",
+            "code": """
+import torch
+student = torch.randn(2, 4, 6, requires_grad=True)
+teacher = torch.randn(2, 4, 6, requires_grad=True)
+mask = torch.ones(2, 4, dtype=torch.bool)
+{fn}(student, teacher, mask).backward()
+assert student.grad is not None and student.grad.abs().sum() > 0
+assert teacher.grad is None
+student.grad = None
+zero = {fn}(student, teacher, torch.zeros_like(mask))
+assert zero.item() == 0.0 and zero.device == student.device
+zero.backward()
+assert student.grad is not None and torch.all(student.grad == 0)
 """,
         },
     ],
     "solution": '''import torch
 import torch.nn.functional as F
 
-
 def on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0):
-    log_p = F.log_softmax(student_logits / temperature, dim=-1)
-    p = log_p.exp()
-    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)
-    per_tok = (p * (log_p - log_t)).sum(dim=-1)
-    sel = per_tok[generated_mask]
-    if sel.numel() == 0:
-        return torch.zeros((), dtype=per_tok.dtype)
-    return sel.mean() * (temperature ** 2)''',
+    # On-policy selects training contexts; reverse KL is the chosen divergence.
+    if not generated_mask.any():
+        return student_logits.sum() * 0.0
+    log_student = F.log_softmax(student_logits / temperature, dim=-1)
+    student_probs = log_student.exp()
+    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)
+    per_token_kl = (student_probs * (log_student - log_teacher)).sum(dim=-1)
+    return per_token_kl[generated_mask].mean() * temperature ** 2''',
     "demo": """import torch
 torch.manual_seed(0)
 teacher = torch.randn(2, 5, 9)

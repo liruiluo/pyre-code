@@ -1,11 +1,11 @@
 """Multi-teacher on-policy distillation task (Xiaomi MiMo MOPD style)."""
 
 TASK = {
-    "title": "Multi-Teacher On-Policy Distillation (MiMo MOPD)",
-    "title_zh": "多教师在线策略蒸馏（MiMo MOPD）",
+    "title": "Generic Multi-Teacher On-Policy KL (MOPD-style)",
+    "title_zh": "多教师 On-Policy KL（MOPD 风格简化实现）",
     "difficulty": "Hard",
-    "description_en": "Blend several teachers into one on-policy distillation loss — the objective behind Xiaomi MiMo's MOPD (Multi-Teacher On-Policy Distillation), used in MiMo-V2.6 post-training to merge distinct teachers' capabilities into a single student.\n\nOne teacher is rarely best at everything: a math teacher, a coding teacher, a generalist. MOPD-style training keeps the student's own rollouts as the data (the on-policy property) and scores them against every teacher, combining the per-teacher signals with capability-mix weights. Each teacher contributes `w_m` of its masked reverse-KL; the weights are the knobs that decide which capability dominates this stage of training. (MiMo's exact weighting scheme is not public — this is the generic multi-teacher objective it instantiates.)\n\n**Signature:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`, one teacher per leading slot\n- `teacher_weights` — `(M,)`, non-negative capability-mix weights\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * sum_m w_m * (mean over masked positions of D_KL(student || teacher_m))`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The same masked positions and the same denominator are shared by every teacher's term\n- Teachers are detached: gradients flow only to the student\n- Logits at unmasked positions must not influence the loss",
-    "description_zh": "把多个教师融合进一个在线策略蒸馏损失——小米 MiMo 的 MOPD（Multi-Teacher On-Policy Distillation）背后的目标，用于 MiMo-V2.6 后训练，把不同教师的能力合并进一个学生。\n\n单个教师很少样样最强：数学教师、代码教师、通才各有所长。MOPD 式训练保持学生自己的 rollout 作为数据（在线策略性质），对每个教师分别打分，再用能力组合权重融合各路信号。每个教师贡献 `w_m` 份其掩码反向 KL；权重就是决定这个训练阶段哪种能力主导的旋钮。（MiMo 的精确加权方案未公开——本题实现的是它实例化的通用多教师目标。）\n\n**签名:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`，逐个教师堆叠\n- `teacher_weights` — `(M,)`，非负能力组合权重\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * Σ_m w_m * (掩码位置的 D_KL(student || teacher_m) 平均)`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 每个教师项共享同一掩码位置和同一分母\n- 教师 detach：梯度只流给学生\n- 未掩码位置的 logits 不得影响损失",
+    "description_en": "Practice a generic weighted multi-teacher reverse-KL objective on student-sampled trajectories (MOPD-style). This is a teaching simplification, NOT an exact reconstruction of Xiaomi MiMo's training recipe.\n\nOne teacher is rarely best at everything: a math teacher, a coding teacher, a generalist. In this exercise the student's rollout logits are supplied, and each teacher contributes a weighted masked reverse KL. Real multi-teacher systems may use task-dependent teacher selection, different data sources, different KL directions, and other training details. Each teacher contributes `w_m` of its masked reverse-KL; the weights are the knobs that decide which capability dominates this stage of training. (Do not infer a specific MiMo weighting scheme from this example.)\n\n**Signature:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`, one teacher per leading slot\n- `teacher_weights` — `(M,)`, non-negative capability-mix weights\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * sum_m w_m * (mean over masked positions of D_KL(student || teacher_m))`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The same masked positions and the same denominator are shared by every teacher's term\n- Teachers are detached: gradients flow only to the student\n- Logits at unmasked positions must not influence the loss",
+    "description_zh": "练习一个在学生 rollout 上对多教师 Reverse KL 加权的通用目标（MOPD 风格）。这是教学简化实现，**不是**小米 MiMo 真实 MOPD 训练方案的精确复现。\n\n单个教师很少样样最强：数学教师、代码教师、通才各有所长。本题假定学生 rollout 已提供，并加权汇总各教师的掩码 Reverse KL。真实多教师系统还可能采用不同任务的教师选择、不同数据来源、不同 KL 方向及其他训练细节。每个教师贡献 `w_m` 份其掩码反向 KL；权重就是决定这个训练阶段哪种能力主导的旋钮。（不能据此推断 MiMo 采用了这套具体加权方案。）\n\n**签名:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`，逐个教师堆叠\n- `teacher_weights` — `(M,)`，非负能力组合权重\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * Σ_m w_m * (掩码位置的 D_KL(student || teacher_m) 平均)`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 每个教师项共享同一掩码位置和同一分母\n- 教师 detach：梯度只流给学生\n- 未掩码位置的 logits 不得影响损失",
     "function_name": "multi_teacher_opd_loss",
     "hint": "Loop over teachers: `log_t = log_softmax(stack[m].detach() / T)`; per-token reverse KL, select with the mask, `.mean()`; accumulate `w_m * kl_m`; multiply the total by `T^2` once. Guard the empty mask.",
     "hint_zh": "逐教师循环：`log_t = log_softmax(stack[m].detach() / T)`；逐 token 反向 KL，掩码选取后 `.mean()`；累加 `w_m * kl_m`；最后整体乘一次 `T^2`。空掩码要守卫。",
@@ -119,23 +119,38 @@ expected = per_tok[mask].mean() * T**2
 assert torch.allclose(out, expected, atol=1e-6), 'M=1 with weight 1 is the plain on-policy loss'
 """,
         },
+        {
+            "name": "Teacher weights detached and empty-mask zero differentiable",
+            "code": """
+import torch
+student = torch.randn(2, 3, 6, requires_grad=True)
+teachers = torch.randn(2, 2, 3, 6, requires_grad=True)
+weights = torch.tensor([0.5, 0.5], requires_grad=True)
+mask = torch.ones(2, 3, dtype=torch.bool)
+{fn}(student, teachers, weights, mask).backward()
+assert student.grad is not None and student.grad.abs().sum() > 0
+assert teachers.grad is None and weights.grad is None
+student.grad = None
+empty = {fn}(student, teachers, weights, ~mask)
+empty.backward()
+assert empty.item() == 0.0 and torch.all(student.grad == 0)
+""",
+        },
     ],
     "solution": '''import torch
 import torch.nn.functional as F
 
-
 def multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):
-    if generated_mask.sum() == 0:
-        return torch.zeros((), dtype=student_logits.dtype)
-    log_p = F.log_softmax(student_logits / temperature, dim=-1)
-    p = log_p.exp()
-    total = torch.zeros((), dtype=student_logits.dtype)
+    if not generated_mask.any():
+        return student_logits.sum() * 0.0
+    log_student = F.log_softmax(student_logits / temperature, dim=-1)
+    student_probs = log_student.exp()
+    total = student_logits.sum() * 0.0
     for m in range(teacher_logits_stack.shape[0]):
-        log_t = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)
-        per_tok = (p * (log_p - log_t)).sum(dim=-1)
-        kl_m = per_tok[generated_mask].mean()
-        total = total + teacher_weights[m] * kl_m
-    return total * (temperature ** 2)''',
+        log_teacher = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)
+        per_token = (student_probs * (log_student - log_teacher)).sum(dim=-1)
+        total = total + teacher_weights[m].detach() * per_token[generated_mask].mean()
+    return total * temperature ** 2''',
     "demo": """import torch
 torch.manual_seed(0)
 student = torch.randn(2, 5, 10)

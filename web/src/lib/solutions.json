@@ -1333,7 +1333,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    if generated_mask.sum() == 0:\n        return torch.zeros((), dtype=student_logits.dtype)\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    total = torch.zeros((), dtype=student_logits.dtype)\n    for m in range(teacher_logits_stack.shape[0]):\n        log_t = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)\n        per_tok = (p * (log_p - log_t)).sum(dim=-1)\n        kl_m = per_tok[generated_mask].mean()\n        total = total + teacher_weights[m] * kl_m\n    return total * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return student_logits.sum() * 0.0\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    total = student_logits.sum() * 0.0\n    for m in range(teacher_logits_stack.shape[0]):\n        log_teacher = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)\n        per_token = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n        total = total + teacher_weights[m].detach() * per_token[generated_mask].mean()\n    return total * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1361,7 +1361,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    sel = per_tok[generated_mask]\n    if sel.numel() == 0:\n        return torch.zeros((), dtype=per_tok.dtype)\n    return sel.mean() * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0):\n    # On-policy selects training contexts; reverse KL is the chosen divergence.\n    if not generated_mask.any():\n        return student_logits.sum() * 0.0\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)\n    per_token_kl = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n    return per_token_kl[generated_mask].mean() * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1375,7 +1375,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return torch.zeros((), dtype=student_logits.dtype)\n    B, T, _ = student_logits.shape\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    idx = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]\n    rows = torch.arange(B, device=student_logits.device)[:, None]\n    priv = privileged_logits.detach()[rows, idx]\n    log_t = F.log_softmax(priv / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    return per_tok[generated_mask].mean() * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return student_logits.sum() * 0.0\n    B, T, _ = student_logits.shape\n    indices = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]\n    rows = torch.arange(B, device=student_logits.device)[:, None]\n    teacher_aligned = privileged_logits.detach()[rows, indices]\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_aligned / temperature, dim=-1)\n    per_token_kl = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n    return per_token_kl[generated_mask].mean() * temperature ** 2",
         "role": "solution"
       },
       {
