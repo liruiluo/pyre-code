@@ -1,0 +1,37 @@
+name: Interview problems quality
+
+on:
+  push:
+    paths:
+      - "torch_judge/tasks/**"
+      - "web/src/lib/problems.json"
+      - "web/src/lib/solutions.json"
+      - "web/src/lib/paths.json"
+      - "tests/test_interview_reference_solutions.py"
+      - ".github/workflows/interview-problems.yml"
+  pull_request:
+    paths:
+      - "torch_judge/tasks/**"
+      - "web/src/lib/problems.json"
+      - "web/src/lib/solutions.json"
+      - "web/src/lib/paths.json"
+      - "tests/test_interview_reference_solutions.py"
+      - ".github/workflows/interview-problems.yml"
+  workflow_dispatch:
+
+jobs:
+  reference-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Pyre dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[dev]"
+      - name: Validate all 49 selected reference solutions and exports
+        run: python -m pytest -q tests/test_interview_reference_solutions.py

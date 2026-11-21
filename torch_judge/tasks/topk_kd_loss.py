@@ -4,8 +4,8 @@ TASK = {
     "title": "Top-k Sparse Distillation Loss",
     "title_zh": "Top-k 稀疏蒸馏损失",
     "difficulty": "Medium",
-    "description_en": "Distill only the teacher's top-k logits — the MiniLM recipe for representation distillation at scale.\n\nFull-vocabulary KL wastes capacity on the teacher's long tail. MiniLM keeps only the teacher's k largest logits, masks every other position to minus infinity on both sides, and computes the KL between the renormalized truncated distributions. The student is forced to match the teacher where it is confident.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
-    "description_zh": "只蒸馏教师 top-k 的 logits——大规模表征蒸馏的 MiniLM 配方。\n\n全词表 KL 把容量浪费在教师的长尾上。MiniLM 只保留教师 k 个最大 logits，其余位置在两侧都置为负无穷，再在重归一化的截断分布之间算 KL。学生被迫在教师自信的地方对齐。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
+    "description_en": "Practice a deliberately truncated-vocabulary teacher top-k KL. This is NOT MiniLM's representation-distillation method.\n\nHere we keep the teacher's k largest-logit positions and renormalize BOTH teacher and student over only those positions. This ignores student mass outside top-k: in particular k=1 always gives zero loss. It is a pedagogical truncated KL, not a faithful substitute for full-vocabulary KD or top-k-plus-tail approximation.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
+    "description_zh": "练习在教师 top-k 词表支持集上计算截断 KL。本题**不是** MiniLM 的表征蒸馏方法。\n\n本题只保留教师最大的 k 个 logits，并让教师与学生都在这 k 个位置重归一化。这会忽略学生在其他词上的概率质量，尤其 k=1 时 Loss 恒为 0。它是教学用的截断 KL，不可直接视为完整词表 KD 或 Top-k+Tail 的替代。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
     "function_name": "topk_kd_loss",
     "hint": "`vals, idx = teacher.topk(k, dim=-1)`; build a mask from `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` and apply the same mask to both sides.",
     "hint_zh": "`vals, idx = teacher.topk(k, dim=-1)`；用 `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` 构造掩码后的教师 logits，学生用同样的索引掩码。",
@@ -84,20 +84,38 @@ assert out_mass.item() < 1e-6, f'Student mass outside the top-k support is invis
 assert out_swapped.item() > 0.3, f'Swapped top-2 ordering must be penalized, got {out_swapped.item()}'
 """,
         },
+        {
+            "name": "Teacher gradients are stopped; invalid k is rejected",
+            "code": """
+import torch
+student = torch.randn(2, 8, requires_grad=True)
+teacher = torch.randn(2, 8, requires_grad=True)
+{fn}(student, teacher, 3).backward()
+assert student.grad is not None and teacher.grad is None
+for k in (0, 9):
+    try:
+        {fn}(student.detach(), teacher.detach(), k)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"invalid k={k} must raise")
+""",
+        },
     ],
     "solution": '''import torch
 import torch.nn.functional as F
 
-
 def topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0):
-    b, v = teacher_logits.shape
-    k = min(int(k), v)
-    vals, idx = teacher_logits.topk(k, dim=-1)
-    s_top = student_logits.gather(-1, idx)
-    log_p = F.log_softmax(s_top / temperature, dim=-1)
-    q = F.softmax(vals / temperature, dim=-1)
-    kl = F.kl_div(log_p, q, reduction="batchmean")
-    return kl * (temperature ** 2)''',
+    if k < 1 or k > teacher_logits.shape[-1]:
+        raise ValueError("k must satisfy 1 <= k <= vocabulary size")
+    if temperature <= 0:
+        raise ValueError("temperature must be positive")
+    # Teacher selects support, but is a fixed distribution for distillation.
+    values, indices = teacher_logits.detach().topk(k, dim=-1)
+    student_topk = student_logits.gather(-1, indices)
+    log_student = F.log_softmax(student_topk / temperature, dim=-1)
+    teacher_probs = F.softmax(values / temperature, dim=-1)
+    return F.kl_div(log_student, teacher_probs, reduction="batchmean") * temperature ** 2''',
     "demo": """import torch
 torch.manual_seed(0)
 teacher = torch.randn(2, 12)

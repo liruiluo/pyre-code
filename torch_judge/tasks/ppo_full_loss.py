@@ -1,8 +1,8 @@
 """PPO clipped policy loss task with internal GAE."""
 
 TASK = {
-    "title": "PPO Clipped Policy Loss with GAE",
-    "title_zh": "PPO 裁剪策略损失（内置 GAE）",
+    "title": "PPO Clipped Policy Loss + GAE (No Value/Entropy)",
+    "title_zh": "PPO 裁剪策略损失与 GAE（不含价值/熵损失）",
     "difficulty": "Hard",
     "description_en": """Implement PPO's clipped policy loss while computing GAE internally.
 
@@ -181,6 +181,21 @@ This task intentionally excludes value loss and entropy bonus. Those are importa
             "assert old_logps.grad is None, 'old_logps should be treated as rollout constants'\n"
             "assert rewards.grad is None, 'rewards should be treated as rollout constants'\n"
             "assert values.grad is None, 'values should be treated as rollout constants for GAE'\n"
+        },
+        {
+            "name": "Negative-advantage lower clipping suppresses gradient",
+            "code": """
+import torch
+ratios = torch.tensor([0.6, 1.5])
+new = ratios.log().detach().requires_grad_(True)
+old = torch.zeros(2)
+rewards = torch.tensor([-1.0, 1.0])
+values = torch.zeros(3)
+dones = torch.tensor([True, True])
+{fn}(new, old, rewards, values, dones, gamma=1.0, lam=1.0, clip_ratio=0.2).backward()
+assert abs(new.grad[0].item()) < 1e-7
+assert abs(new.grad[1].item()) < 1e-7
+""",
         },
     ],
     "solution": '''def ppo_full_loss(new_logps: Tensor, old_logps: Tensor, rewards: Tensor,

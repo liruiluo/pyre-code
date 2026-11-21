@@ -127,10 +127,10 @@
       "titleZh": "梯度累积",
       "difficulty": "Easy",
       "functionName": "accumulated_step",
-      "hint": "1. optimizer.zero_grad() once\n2. for each micro-batch: forward → loss/n → backward\n3. optimizer.step()\n   Dividing by n ensures accumulated grads match a single full-batch update.",
-      "hintZh": "1. optimizer.zero_grad() 一次\n2. 对每个微批次：前向 → loss/n → 反向\n3. optimizer.step()\n   除以 n 确保累积梯度与单次全批次更新一致。",
-      "descriptionEn": "Implement gradient accumulation over micro-batches.\n\nGradient accumulation simulates a large batch by accumulating gradients from multiple smaller batches before a single optimizer step.\n\n**Signature:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**Parameters:**\n- `model` — nn.Module\n- `optimizer` — torch optimizer\n- `loss_fn` — loss function\n- `micro_batches` — list of (x, y) tuples\n\n**Returns:** total loss as a float\n\n**Constraints:**\n- Scale each micro-batch loss by `1/n` before backward\n- Must match a single full-batch update numerically",
-      "descriptionZh": "实现微批次梯度累积。\n\n梯度累积通过在多个小批次上累积梯度后执行一次优化器步骤，模拟大批次训练。\n\n**签名:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**参数:**\n- `model` — nn.Module\n- `optimizer` — torch 优化器\n- `loss_fn` — 损失函数\n- `micro_batches` — (x, y) 元组列表\n\n**返回:** 总损失（浮点数）\n\n**约束:**\n- 每个微批次损失在反向传播前除以 `n`\n- 必须与单次全批次更新数值一致",
+      "hint": "1. optimizer.zero_grad() once\n2. for each micro-batch: forward → loss * (micro_batch_size / total_batch_size) → backward\n3. optimizer.step()\n   Dividing by n works only when micro-batches have equal sizes and loss uses mean reduction.",
+      "hintZh": "1. optimizer.zero_grad() 一次\n2. 对每个微批次：前向 → loss * (micro_batch_size / total_batch_size) → 反向\n3. optimizer.step()\n   仅当微批次等大小且 loss 使用 mean reduction 时才能直接除以 n。",
+      "descriptionEn": "Implement gradient accumulation over micro-batches.\n\nGradient accumulation simulates a large batch by accumulating gradients from multiple smaller batches before a single optimizer step.\n\n**Signature:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**Parameters:**\n- `model` — nn.Module\n- `optimizer` — torch optimizer\n- `loss_fn` — loss function\n- `micro_batches` — list of (x, y) tuples\n\n**Returns:** total loss as a float\n\n**Constraints:**\n- For mean-reduced per-example losses, scale each micro-batch by `micro_batch_size / total_batch_size` before backward (equal-sized batches simplify to `1/n`)\n- Must match a single full-batch update numerically",
+      "descriptionZh": "实现微批次梯度累积。\n\n梯度累积通过在多个小批次上累积梯度后执行一次优化器步骤，模拟大批次训练。\n\n**签名:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**参数:**\n- `model` — nn.Module\n- `optimizer` — torch 优化器\n- `loss_fn` — 损失函数\n- `micro_batches` — (x, y) 元组列表\n\n**返回:** 总损失（浮点数）\n\n**约束:**\n- 采用按样本取 mean 的 loss 时，按 `micro_batch_size / total_batch_size` 缩放各微批次（仅等大小批次可简化为 `1/n`）\n- 必须与单次全批次更新数值一致",
       "tests": [
         {
           "name": "Matches full batch update",
@@ -143,6 +143,14 @@
         {
           "name": "Parameters actually update",
           "code": "\nimport torch, torch.nn as nn\nmodel = nn.Linear(4, 2)\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\nw_before = model.weight.data.clone()\n{fn}(model, opt, nn.MSELoss(), [(torch.randn(2, 4), torch.randn(2, 2))])\nassert not torch.equal(model.weight.data, w_before), 'Should change'\n"
+        },
+        {
+          "name": "Unequal micro-batches match a single full-batch update",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(12)\nmodel = nn.Linear(4, 2, bias=False)\nref = nn.Linear(4, 2, bias=False)\nref.load_state_dict(model.state_dict())\nx1, y1 = torch.randn(1, 4), torch.randn(1, 2)\nx2, y2 = torch.randn(5, 4), torch.randn(5, 2)\nloss_fn = nn.MSELoss()\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\nopt_ref = torch.optim.SGD(ref.parameters(), lr=0.1)\nloss = {fn}(model, opt, loss_fn, [(x1, y1), (x2, y2)])\nopt_ref.zero_grad()\nexpected_loss = loss_fn(ref(torch.cat([x1, x2])), torch.cat([y1, y2]))\nexpected_loss.backward()\nopt_ref.step()\nassert torch.allclose(model.weight, ref.weight, atol=1e-6)\nassert abs(loss - expected_loss.item()) < 1e-6\n"
+        },
+        {
+          "name": "Empty micro-batch list is rejected",
+          "code": "\nimport torch\nimport torch.nn as nn\nmodel = nn.Linear(2, 1)\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\ntry:\n    {fn}(model, opt, nn.MSELoss(), [])\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError(\"Empty accumulation should raise ValueError\")\n"
         }
       ]
     },
@@ -173,6 +181,10 @@
         {
           "name": "Preserves direction",
           "code": "\nimport torch\ntorch.manual_seed(0)\np = torch.randn(100, requires_grad=True)\n(p * 10).sum().backward()\ndir_before = p.grad / p.grad.norm()\n{fn}([p], max_norm=1.0)\ndir_after = p.grad / p.grad.norm()\nassert torch.allclose(dir_before, dir_after, atol=1e-5), 'Should preserve direction'\n"
+        },
+        {
+          "name": "Missing gradients and max_norm=0",
+          "code": "\nimport torch\np = torch.tensor([2.0], requires_grad=True)\nassert {fn}([p], 1.0) == 0.0\np.grad = torch.tensor([3.0])\nnorm = {fn}([p], 0.0)\nassert abs(norm - 3.0) < 1e-6\nassert torch.equal(p.grad, torch.zeros_like(p.grad))\n"
         }
       ]
     },
@@ -289,6 +301,10 @@
         {
           "name": "zero_grad works",
           "code": "\nimport torch\nw = torch.randn(4, requires_grad=True)\nopt = {fn}([w], lr=0.01)\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0, 'zero_grad should zero all gradients'\n"
+        },
+        {
+          "name": "Per-parameter step counts when gradients are missing",
+          "code": "\nimport torch\nw1 = torch.tensor([1.0], requires_grad=True)\nw2 = torch.tensor([-1.0], requires_grad=True)\nr1 = w1.detach().clone().requires_grad_(True)\nr2 = w2.detach().clone().requires_grad_(True)\nopt = {fn}([w1, w2], lr=0.01)\nref = torch.optim.Adam([r1, r2], lr=0.01)\nfor i in range(5):\n    w1.grad = torch.tensor([0.5])\n    r1.grad = torch.tensor([0.5])\n    w2.grad = torch.tensor([0.3]) if i in (0, 2, 4) else None\n    r2.grad = torch.tensor([0.3]) if i in (0, 2, 4) else None\n    opt.step()\n    ref.step()\nassert torch.allclose(w1, r1, atol=1e-6)\nassert torch.allclose(w2, r2, atol=1e-6)\n"
         }
       ]
     },
@@ -469,6 +485,10 @@
         {
           "name": "Gradient flow",
           "code": "\nimport torch\nlayer = {fn}(8, 4)\nx = torch.randn(2, 8)\ny = layer.forward(x)\ny.sum().backward()\nassert layer.weight.grad is not None, 'weight.grad is None'\nassert layer.bias.grad is not None, 'bias.grad is None'\n"
+        },
+        {
+          "name": "Kaiming normal fan-in scaling",
+          "code": "\nimport torch, math\ntorch.manual_seed(0)\nlayer = {fn}(256, 512)\nassert abs(layer.weight.std().item() - math.sqrt(2.0 / 256)) < 0.01\n"
         }
       ]
     },
@@ -507,6 +527,10 @@
         {
           "name": "Closed-form uses no autograd",
           "code": "\nimport torch\nX = torch.randn(30, 2)\ny = X @ torch.tensor([1.0, 2.0]) + 0.5\nmodel = {fn}()\nw, b = model.closed_form(X, y)\nassert not w.requires_grad, 'Closed-form w should not require grad'\n"
+        },
+        {
+          "name": "float64 inputs work in all three methods",
+          "code": "\nimport torch\ntorch.manual_seed(9)\nX = torch.randn(60, 3, dtype=torch.float64)\nw_true = torch.tensor([1.2, -0.4, 0.7], dtype=torch.float64)\ny = X @ w_true + 0.8\nm = {fn}()\nfor method in (m.closed_form, m.gradient_descent, m.nn_linear):\n    kw = {} if method == m.closed_form else {\"lr\": 0.05, \"steps\": 600}\n    w, b = method(X, y, **kw)\n    assert w.dtype == X.dtype and b.dtype == X.dtype\n    assert torch.allclose(w, w_true, atol=0.08)\n    assert abs(b.item() - 0.8) < 0.08\n"
         }
       ]
     },
@@ -643,6 +667,18 @@
         {
           "name": "top_p excludes low-probability tokens",
           "code": "\nimport torch\n# Token 0 has prob ~1.0 after softmax; top_p=0.5 should only allow token 0\nlogits = torch.zeros(10)\nlogits[0] = 10.0\ntorch.manual_seed(0)\nresults = set()\nfor _ in range(50):\n    results.add({fn}(logits.clone(), top_k=0, top_p=0.5, temperature=1.0))\nexpected = {0}\nassert results == expected, f'With top_p=0.5 and dominant token 0, only token 0 should be sampled, got ' + str(results)\n"
+        },
+        {
+          "name": "Does not modify the caller's logits",
+          "code": "\nimport torch\nlogits = torch.tensor([0.5, 1.0, -1.0, 2.0])\noriginal = logits.clone()\nfor _ in range(5):\n    {fn}(logits, top_k=2, top_p=0.8)\nassert torch.equal(logits, original)\n"
+        },
+        {
+          "name": "Top-k ties keep at most k candidates",
+          "code": "\nimport torch\nlogits = torch.tensor([2.0, 2.0, 2.0, 0.0])\ntorch.manual_seed(3)\nsamples = { {fn}(logits, top_k=1) for _ in range(40) }\nassert len(samples) == 1, f\"top_k=1 should choose one tied index, saw {samples}\"\n"
+        },
+        {
+          "name": "Invalid sampling options fail clearly",
+          "code": "\nimport torch\nfor kwargs in ({\"temperature\": 0}, {\"top_p\": 0}, {\"top_p\": 1.1}, {\"top_k\": -1}, {\"top_k\": 8}):\n    try:\n        {fn}(torch.randn(3), **kwargs)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(f\"Must reject {kwargs}\")\n"
         }
       ]
     },
@@ -755,10 +791,10 @@
       "titleZh": "DPO 损失",
       "difficulty": "Medium",
       "functionName": "dpo_loss",
-      "hint": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = -log(sigmoid(chosen_logratios - rejected_logratios)).mean()",
-      "hintZh": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = -log(sigmoid(chosen_logratios - rejected_logratios)).mean()",
-      "descriptionEn": "Implement the DPO (Direct Preference Optimization) loss.\n\nDPO aligns language models with human preferences without reinforcement learning, using paired chosen/rejected log-probabilities.\n\n**Signature:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_chosen_logps` — policy log-probs for chosen responses (B,)\n- `policy_rejected_logps` — policy log-probs for rejected responses (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — reference model log-probs (B,)\n- `beta` — temperature scaling factor\n\n**Returns:** scalar loss\n\n**Constraints:**\n- `L = -log(sigmoid(beta * ((pi_c - ref_c) - (pi_r - ref_r)))).mean()`",
-      "descriptionZh": "实现 DPO（直接偏好优化）损失。\n\nDPO 无需强化学习即可将语言模型与人类偏好对齐，使用配对的选中/拒绝对数概率。\n\n**签名:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_chosen_logps` — 策略模型对选中回复的对数概率 (B,)\n- `policy_rejected_logps` — 策略模型对拒绝回复的对数概率 (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — 参考模型的对数概率 (B,)\n- `beta` — 温度缩放因子\n\n**返回:** 标量损失\n\n**约束:**\n- `L = -log(sigmoid(beta * ((pi_c - ref_c) - (pi_r - ref_r)))).mean()`",
+      "hint": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = F.softplus(-(chosen_logratios - rejected_logratios)).mean()",
+      "hintZh": "1. chosen_logratios = β·(π_chosen - ref_chosen)\n2. rejected_logratios = β·(π_rejected - ref_rejected)\n3. loss = F.softplus(-(chosen_logratios - rejected_logratios)).mean()",
+      "descriptionEn": "Implement the DPO (Direct Preference Optimization) loss.\n\nDPO aligns language models with human preferences without reinforcement learning, using paired chosen/rejected log-probabilities.\n\n**Signature:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_chosen_logps` — policy log-probs for chosen responses (B,)\n- `policy_rejected_logps` — policy log-probs for rejected responses (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — reference model log-probs (B,)\n- `beta` — temperature scaling factor\n\n**Returns:** scalar loss\n\n**Constraints:**\n- `L = softplus(-beta * ((pi_c - ref_c) - (pi_r - ref_r))).mean()` (numerically stable)\n- Reference model log-probabilities are detached constants",
+      "descriptionZh": "实现 DPO（直接偏好优化）损失。\n\nDPO 无需强化学习即可将语言模型与人类偏好对齐，使用配对的选中/拒绝对数概率。\n\n**签名:** `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_chosen_logps` — 策略模型对选中回复的对数概率 (B,)\n- `policy_rejected_logps` — 策略模型对拒绝回复的对数概率 (B,)\n- `ref_chosen_logps`, `ref_rejected_logps` — 参考模型的对数概率 (B,)\n- `beta` — 温度缩放因子\n\n**返回:** 标量损失\n\n**约束:**\n- `L = softplus(-beta * ((pi_c - ref_c) - (pi_r - ref_r))).mean()`（数值稳定）\n- 参考模型 log-probs 不参与梯度更新",
       "tests": [
         {
           "name": "Easy pair: small loss",
@@ -779,6 +815,14 @@
         {
           "name": "Beta scaling",
           "code": "\nimport torch\ntorch.manual_seed(0)\nc, r, rc, rr = torch.randn(4), torch.randn(4), torch.randn(4), torch.randn(4)\nl1 = {fn}(c, r, rc, rr, beta=0.1)\nl2 = {fn}(c, r, rc, rr, beta=1.0)\nassert not torch.allclose(l1, l2), 'Different beta should give different loss'\n"
+        },
+        {
+          "name": "Extreme preference logits stay finite",
+          "code": "\nimport torch\nchosen = torch.tensor([-1000.0], requires_grad=True)\nrejected = torch.tensor([0.0], requires_grad=True)\nloss = {fn}(chosen, rejected, torch.zeros(1), torch.zeros(1), beta=1.0)\nassert torch.isfinite(loss) and abs(loss.item() - 1000.0) < 1e-3\nloss.backward()\nassert torch.isfinite(chosen.grad).all() and torch.isfinite(rejected.grad).all()\n"
+        },
+        {
+          "name": "Reference log-probs are detached",
+          "code": "\nimport torch\nc = torch.tensor([-0.2], requires_grad=True)\nr = torch.tensor([-0.5], requires_grad=True)\nrc = torch.tensor([-0.7], requires_grad=True)\nrr = torch.tensor([-0.4], requires_grad=True)\n{fn}(c, r, rc, rr).backward()\nassert c.grad is not None and r.grad is not None\nassert rc.grad is None and rr.grad is None\n"
         }
       ]
     },
@@ -887,14 +931,14 @@
     {
       "id": "grpo_loss",
       "type": "code",
-      "title": "GRPO (Group Relative Policy Optimization) Loss",
-      "titleZh": "GRPO 损失",
+      "title": "GRPO Group Advantages: REINFORCE Surrogate",
+      "titleZh": "GRPO 组相对优势：REINFORCE 简化目标",
       "difficulty": "Hard",
       "functionName": "grpo_loss",
       "hint": "1. for each group g: A_i = (r_i - mean_g) / (std_g + eps)\n2. advantages = A.detach()  (no grad through rewards)\n3. loss = -(advantages * logps).mean()",
       "hintZh": "1. 对每个组 g：A_i = (r_i - mean_g) / (std_g + eps)\n2. advantages = A.detach()（梯度不流经奖励）\n3. loss = -(advantages * logps).mean()",
-      "descriptionEn": "Implement the GRPO (Group Relative Policy Optimization) loss.\n\nGRPO normalizes rewards within each prompt group to compute advantages, then optimizes the policy using these group-relative advantages.\n\n**Signature:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `logps` — policy log-probabilities (B,)\n- `rewards` — scalar rewards (B,)\n- `group_ids` — integer group identifiers (B,)\n- `eps` — epsilon for numerical stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group z-score normalization: `A_i = (r_i - mean_g) / (std_g + eps)`\n- Advantages must be detached (gradients flow only through logps)\n- Loss = `-mean(A_i * logps_i)`",
-      "descriptionZh": "实现 GRPO（组相对策略优化）损失。\n\nGRPO 在每个提示组内归一化奖励以计算优势值，然后使用这些组相对优势优化策略。\n\n**签名:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**参数:**\n- `logps` — 策略对数概率 (B,)\n- `rewards` — 标量奖励 (B,)\n- `group_ids` — 整数组标识符 (B,)\n- `eps` — 数值稳定性的 epsilon\n\n**返回:** 标量损失\n\n**约束:**\n- 组内 z-score 归一化：`A_i = (r_i - mean_g) / (std_g + eps)`\n- 优势值必须 detach（梯度仅通过 logps 流动）\n- 损失 = `-mean(A_i * logps_i)`",
+      "descriptionEn": "Implement the GRPO (Group Relative Policy Optimization) loss.\n\nGRPO normalizes rewards within each prompt group to compute advantages. This exercise uses a simplified REINFORCE-style sequence-level surrogate without old-policy ratios, clipping, per-token masks or KL regularization; it is NOT the full practical GRPO training loss.\n\n**Signature:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `logps` — policy log-probabilities (B,)\n- `rewards` — scalar rewards (B,)\n- `group_ids` — integer group identifiers (B,)\n- `eps` — epsilon for numerical stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group z-score normalization: `A_i = (r_i - mean_g) / (std_g + eps)`\n- Advantages must be detached (gradients flow only through logps)\n- Loss = `-mean(A_i * logps_i)`",
+      "descriptionZh": "实现 GRPO（组相对策略优化）损失。\n\nGRPO 在每个提示组内归一化奖励以计算优势值。本题是序列级 REINFORCE 形式的简化目标，不含旧策略 ratio、clipping、逐 token mask 或 KL 正则，**并非**真实训练中的完整 GRPO Loss。\n\n**签名:** `grpo_loss(logps, rewards, group_ids, eps=1e-5) -> Tensor`\n\n**参数:**\n- `logps` — 策略对数概率 (B,)\n- `rewards` — 标量奖励 (B,)\n- `group_ids` — 整数组标识符 (B,)\n- `eps` — 数值稳定性的 epsilon\n\n**返回:** 标量损失\n\n**约束:**\n- 组内 z-score 归一化：`A_i = (r_i - mean_g) / (std_g + eps)`\n- 优势值必须 detach（梯度仅通过 logps 流动）\n- 损失 = `-mean(A_i * logps_i)`",
       "tests": [
         {
           "name": "Basic shape & type",
@@ -911,6 +955,10 @@
         {
           "name": "Group-wise normalization",
           "code": "\nimport torch\nlogps = torch.zeros(4, requires_grad=True)\nrewards = torch.tensor([0.0, 1.0, 10.0, 11.0])\ngroup_ids = torch.tensor([0, 0, 1, 1])\nloss = {fn}(logps, rewards, group_ids)\nloss.backward()\n# Since each group has rewards [0,1] and [10,11], the normalized advantages\n# should be identical across groups, leading to identical gradients per position.\nassert torch.allclose(logps.grad[:2], logps.grad[2:]), 'Groups should be treated independently but symmetrically'\n"
+        },
+        {
+          "name": "Constant rewards in a group produce zero advantages",
+          "code": "\nimport torch\nlogps = torch.tensor([-0.2, -0.5, -0.8, -1.0], requires_grad=True)\nrewards = torch.tensor([2.0, 2.0, 3.0, 3.0])\ngroups = torch.tensor([0, 0, 1, 1])\nloss = {fn}(logps, rewards, groups)\nassert abs(loss.item()) < 1e-7\nloss.backward()\nassert torch.all(logps.grad == 0)\n"
         }
       ]
     },
@@ -1115,6 +1163,10 @@
         {
           "name": "Gradient flows to new_logps only",
           "code": "\nimport torch\nnew_logps = torch.randn(8, requires_grad=True)\nold_logps = torch.randn(8, requires_grad=True)\nadvantages = torch.randn(8, requires_grad=True)\nloss = {fn}(new_logps, old_logps, advantages)\nloss.backward()\nassert new_logps.grad is not None, 'Gradients should flow through new_logps'\nassert old_logps.grad is None, 'Gradients should not flow through old_logps (treat as constant baseline)'\nassert advantages.grad is None, 'Gradients should not flow through advantages (treat as constant advantages)'\n"
+        },
+        {
+          "name": "Sign-dependent clipping keeps correction gradients",
+          "code": "\nimport torch\nold_logps = torch.zeros(4)\nratios = torch.tensor([1.5, 0.6, 0.6, 1.5])\nnew_logps = ratios.log().detach().requires_grad_(True)\nadv = torch.tensor([1.0, 1.0, -1.0, -1.0])\n{fn}(new_logps, old_logps, adv, clip_ratio=0.2).backward()\ngrad = new_logps.grad\nassert abs(grad[0].item()) < 1e-7, \"A>0, r>upper clipped\"\nassert abs(grad[1].item()) > 1e-5, \"A>0, r<lower correction gradient\"\nassert abs(grad[2].item()) < 1e-7, \"A<0, r<lower clipped\"\nassert abs(grad[3].item()) > 1e-5, \"A<0, r>upper correction gradient\"\n"
         }
       ]
     },
@@ -1855,10 +1907,10 @@
       "titleZh": "Bradley-Terry 奖励模型",
       "difficulty": "Medium",
       "functionName": "reward_model_loss",
-      "hint": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = -log(1 / (1 + exp(-margin))).mean()  (manual sigmoid)",
-      "hintZh": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = -log(1 / (1 + exp(-margin))).mean()  (手动 sigmoid)",
-      "descriptionEn": "Implement the canonical RLHF reward model training loss based on the Bradley-Terry preference model.\n\nGiven hidden states for chosen and rejected responses, project them to scalar rewards and compute the preference loss.\n\n**Signature:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**Parameters:**\n- `chosen_hidden` — last-token hidden states for chosen responses (B, D)\n- `rejected_hidden` — last-token hidden states for rejected responses (B, D)\n- `reward_head` — linear projection to scalar reward (D, 1)\n\n**Returns:** scalar loss tensor\n\n**Formula:**\n1. `r_chosen = chosen_hidden @ reward_head` — shape (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — shape (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**Constraint:** implement sigmoid manually — `σ(x) = 1 / (1 + exp(-x))` — do not use library sigmoid functions.",
-      "descriptionZh": "实现基于 Bradley-Terry 偏好模型的标准 RLHF 奖励模型训练损失。\n\n给定选中和拒绝响应的隐藏状态，将其投影为标量奖励并计算偏好损失。\n\n**签名:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**参数:**\n- `chosen_hidden` — 选中响应的最后一个 token 隐藏状态 (B, D)\n- `rejected_hidden` — 拒绝响应的最后一个 token 隐藏状态 (B, D)\n- `reward_head` — 投影到标量奖励的线性层权重 (D, 1)\n\n**返回:** 标量损失张量\n\n**公式:**\n1. `r_chosen = chosen_hidden @ reward_head` — 形状 (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — 形状 (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**约束:** 手动实现 sigmoid — `σ(x) = 1 / (1 + exp(-x))` — 不得使用库函数。",
+      "hint": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = logaddexp(0, -margin).mean()  (stable negative log-sigmoid)",
+      "hintZh": "1. r_chosen = (chosen_hidden @ reward_head).squeeze(-1)  → (B,)\n2. r_rejected = (rejected_hidden @ reward_head).squeeze(-1)\n3. margin = r_chosen - r_rejected\n4. loss = logaddexp(0, -margin).mean()（数值稳定）",
+      "descriptionEn": "Implement the canonical RLHF reward model training loss based on the Bradley-Terry preference model.\n\nGiven hidden states for chosen and rejected responses, project them to scalar rewards and compute the preference loss.\n\n**Signature:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**Parameters:**\n- `chosen_hidden` — last-token hidden states for chosen responses (B, D)\n- `rejected_hidden` — last-token hidden states for rejected responses (B, D)\n- `reward_head` — linear projection to scalar reward (D, 1)\n\n**Returns:** scalar loss tensor\n\n**Formula:**\n1. `r_chosen = chosen_hidden @ reward_head` — shape (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — shape (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**Constraint:** compute the equivalent negative log-sigmoid stably (e.g. `torch.logaddexp(0, -margin)` or `F.softplus(-margin)`); direct `log(sigmoid(x))` can overflow/underflow.",
+      "descriptionZh": "实现基于 Bradley-Terry 偏好模型的标准 RLHF 奖励模型训练损失。\n\n给定选中和拒绝响应的隐藏状态，将其投影为标量奖励并计算偏好损失。\n\n**签名:** `reward_model_loss(chosen_hidden, rejected_hidden, reward_head) -> Tensor`\n\n**参数:**\n- `chosen_hidden` — 选中响应的最后一个 token 隐藏状态 (B, D)\n- `rejected_hidden` — 拒绝响应的最后一个 token 隐藏状态 (B, D)\n- `reward_head` — 投影到标量奖励的线性层权重 (D, 1)\n\n**返回:** 标量损失张量\n\n**公式:**\n1. `r_chosen = chosen_hidden @ reward_head` — 形状 (B, 1)\n2. `r_rejected = rejected_hidden @ reward_head` — 形状 (B, 1)\n3. `loss = -mean(log(sigmoid(r_chosen - r_rejected)))`\n\n**约束:** 稳定计算等价的负 log-sigmoid（如 `torch.logaddexp(0, -margin)` 或 `F.softplus(-margin)`）；直接计算 `log(sigmoid(x))` 可能溢出或下溢。",
       "tests": [
         {
           "name": "Returns scalar",
@@ -1879,6 +1931,10 @@
         {
           "name": "Larger margin -> lower loss",
           "code": "\nimport torch\ntorch.manual_seed(4)\nB, D = 8, 16\nhead = torch.ones(D, 1) / D\nbase = torch.zeros(B, D)\n# small margin\nchosen_small = base + 0.5\nrejected_small = base - 0.5\nloss_small = {fn}(chosen_small, rejected_small, head)\n# large margin\nchosen_large = base + 5.0\nrejected_large = base - 5.0\nloss_large = {fn}(chosen_large, rejected_large, head)\nassert loss_large.item() < loss_small.item(), 'Larger margin should yield lower loss'\n"
+        },
+        {
+          "name": "Extreme negative margin has finite loss and gradients",
+          "code": "\nimport torch\nchosen = torch.tensor([[-1000.0]], requires_grad=True)\nrejected = torch.tensor([[0.0]], requires_grad=True)\nhead = torch.tensor([[1.0]], requires_grad=True)\nloss = {fn}(chosen, rejected, head)\nassert torch.isfinite(loss) and abs(loss.item() - 1000.0) < 1e-3\nloss.backward()\nassert torch.isfinite(chosen.grad).all() and torch.isfinite(head.grad).all()\n"
         }
       ]
     },
@@ -1915,14 +1971,14 @@
     {
       "id": "grpo_clipped_loss",
       "type": "code",
-      "title": "GRPO Clipped Surrogate Loss",
-      "titleZh": "GRPO 裁剪代理损失",
+      "title": "GRPO Clipped Sequence-Level Surrogate",
+      "titleZh": "GRPO 裁剪代理目标（序列级简化）",
       "difficulty": "Hard",
       "functionName": "grpo_clipped_loss",
       "hint": "1. compute group-normalized rewards as detached advantages\n2. ratio = exp(new_logps - old_logps.detach())\n3. unclipped = ratio * advantages\n4. clipped = clamp(ratio, 1-eps_clip, 1+eps_clip) * advantages\n5. return -min(unclipped, clipped).mean()",
       "hintZh": "1. 先按 group 归一化 rewards，得到 detached advantages\n2. ratio = exp(new_logps - old_logps.detach())\n3. unclipped = ratio * advantages\n4. clipped = clamp(ratio, 1-eps_clip, 1+eps_clip) * advantages\n5. 返回 -min(unclipped, clipped).mean()",
-      "descriptionEn": "Implement a PPO-style clipped surrogate for GRPO.\n\nThe simpler GRPO task in this site teaches group-relative reward normalization with a policy-gradient style loss. This advanced version keeps that group-relative advantage computation, then adds the old-policy importance ratio and clipping used in practical GRPO-style objectives.\n\n**Signature:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `new_logps` — current policy log-probabilities, shape (B,)\n- `old_logps` — old policy log-probabilities, shape (B,), treated as constant\n- `rewards` — scalar rewards, shape (B,)\n- `group_ids` — integer prompt/group identifiers, shape (B,)\n- `clip_ratio` — clipping range epsilon\n- `eps` — epsilon for reward-standard-deviation stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group normalized advantage: `A_i = (reward_i - mean_group) / (std_group + eps)`\n- Importance ratio: `ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- Loss: `-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- Gradients flow only through `new_logps`",
-      "descriptionZh": "实现带 PPO-style ratio clipping 的 GRPO 裁剪代理损失。\n\n本站较简化的 GRPO 题用于练习组内奖励归一化和 policy-gradient 风格损失。本进阶版保留组相对优势计算，再加入旧策略重要性采样比率和裁剪，这更接近实际 GRPO 类目标。\n\n**签名:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**参数:**\n- `new_logps` — 当前策略对数概率，形状 (B,)\n- `old_logps` — 旧策略对数概率，形状 (B,)，视为常量\n- `rewards` — 标量奖励，形状 (B,)\n- `group_ids` — 整数提示/组标识，形状 (B,)\n- `clip_ratio` — 裁剪范围 epsilon\n- `eps` — 奖励标准差的数值稳定项\n\n**返回:** 标量损失\n\n**约束:**\n- 组内归一化优势：`A_i = (reward_i - mean_group) / (std_group + eps)`\n- 重要性采样比率：`ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- 损失：`-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- 梯度仅通过 `new_logps` 流动",
+      "descriptionEn": "Implement a PPO-style clipped surrogate for GRPO.\n\nThe simpler GRPO task in this site teaches group-relative reward normalization with a policy-gradient style loss. This advanced version adds old-policy importance ratios and PPO-style clipping, but uses one log-probability per whole response. It is a simplified sequence-level objective, not a complete token-level GRPO implementation with response masking, length reduction, reference KL and training-system details.\n\n**Signature:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `new_logps` — current policy log-probabilities, shape (B,)\n- `old_logps` — old policy log-probabilities, shape (B,), treated as constant\n- `rewards` — scalar rewards, shape (B,)\n- `group_ids` — integer prompt/group identifiers, shape (B,)\n- `clip_ratio` — clipping range epsilon\n- `eps` — epsilon for reward-standard-deviation stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group normalized advantage: `A_i = (reward_i - mean_group) / (std_group + eps)`\n- Importance ratio: `ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- Loss: `-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- Gradients flow only through `new_logps`",
+      "descriptionZh": "实现带 PPO-style ratio clipping 的 GRPO 裁剪代理损失。\n\n本站较简化的 GRPO 题用于练习组内奖励归一化和 policy-gradient 风格损失。本进阶版保留组相对优势计算，加入旧策略重要性采样比率和裁剪，但每条回复只有一个 log-prob。它是序列级简化目标，不包括实际训练的逐 token Mask、长度归一化、Reference KL 等细节。\n\n**签名:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**参数:**\n- `new_logps` — 当前策略对数概率，形状 (B,)\n- `old_logps` — 旧策略对数概率，形状 (B,)，视为常量\n- `rewards` — 标量奖励，形状 (B,)\n- `group_ids` — 整数提示/组标识，形状 (B,)\n- `clip_ratio` — 裁剪范围 epsilon\n- `eps` — 奖励标准差的数值稳定项\n\n**返回:** 标量损失\n\n**约束:**\n- 组内归一化优势：`A_i = (reward_i - mean_group) / (std_group + eps)`\n- 重要性采样比率：`ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- 损失：`-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- 梯度仅通过 `new_logps` 流动",
       "tests": [
         {
           "name": "Basic shape & type",
@@ -1939,14 +1995,18 @@
         {
           "name": "Gradient flows to new_logps only",
           "code": "\nimport torch\nnew_logps = torch.randn(4, requires_grad=True)\nold_logps = torch.randn(4, requires_grad=True)\nrewards = torch.randn(4, requires_grad=True)\ngroup_ids = torch.tensor([0, 0, 1, 1])\nloss = {fn}(new_logps, old_logps, rewards, group_ids)\nloss.backward()\nassert new_logps.grad is not None, 'Gradients should flow through new_logps'\nassert old_logps.grad is None, 'Gradients should not flow through old_logps'\nassert rewards.grad is None, 'Gradients should not flow through rewards'\n"
+        },
+        {
+          "name": "GRPO clipping gradients depend on advantage sign",
+          "code": "\nimport torch\nold = torch.zeros(4)\nratios = torch.tensor([1.5, 0.6, 0.6, 1.5])\nnew = ratios.log().detach().requires_grad_(True)\nrewards = torch.tensor([1.0, 0.0, 0.0, 1.0])\ngroups = torch.tensor([0, 0, 1, 1])\n# Group 0 advantages: +1,-1; group 1: -1,+1\n{fn}(new, old, rewards, groups, clip_ratio=0.2).backward()\nassert abs(new.grad[0].item()) < 1e-7\nassert abs(new.grad[1].item()) < 1e-7\nassert abs(new.grad[2].item()) < 1e-7\nassert abs(new.grad[3].item()) < 1e-7\n"
         }
       ]
     },
     {
       "id": "ppo_full_loss",
       "type": "code",
-      "title": "PPO Clipped Policy Loss with GAE",
-      "titleZh": "PPO 裁剪策略损失（内置 GAE）",
+      "title": "PPO Clipped Policy Loss + GAE (No Value/Entropy)",
+      "titleZh": "PPO 裁剪策略损失与 GAE（不含价值/熵损失）",
       "difficulty": "Hard",
       "functionName": "ppo_full_loss",
       "hint": "1. detach old_logps, rewards, values, and dones before GAE\n2. T = rewards.shape[-1]; batch dimensions are leading dimensions\n3. compute GAE by iterating with for t in reversed(range(T))\n4. ratio = exp(new_logps - old_logps.detach())\n5. return -mean(min(ratio*A, clamp(ratio, 1±clip_ratio)*A))",
@@ -1973,6 +2033,10 @@
         {
           "name": "Gradient flows through new_logps only",
           "code": "\nimport torch\nnew_logps = torch.randn(4, 3, requires_grad=True)\nold_logps = torch.randn(4, 3, requires_grad=True)\nrewards = torch.randn(4, 3, requires_grad=True)\nvalues = torch.randn(4, 4, requires_grad=True)\ndones = torch.zeros(4, 3)\nloss = {fn}(new_logps, old_logps, rewards, values, dones)\nloss.backward()\nassert new_logps.grad is not None, 'Actor gradients should flow through new_logps'\nassert old_logps.grad is None, 'old_logps should be treated as rollout constants'\nassert rewards.grad is None, 'rewards should be treated as rollout constants'\nassert values.grad is None, 'values should be treated as rollout constants for GAE'\n"
+        },
+        {
+          "name": "Negative-advantage lower clipping suppresses gradient",
+          "code": "\nimport torch\nratios = torch.tensor([0.6, 1.5])\nnew = ratios.log().detach().requires_grad_(True)\nold = torch.zeros(2)\nrewards = torch.tensor([-1.0, 1.0])\nvalues = torch.zeros(3)\ndones = torch.tensor([True, True])\n{fn}(new, old, rewards, values, dones, gamma=1.0, lam=1.0, clip_ratio=0.2).backward()\nassert abs(new.grad[0].item()) < 1e-7\nassert abs(new.grad[1].item()) < 1e-7\n"
         }
       ]
     },
@@ -2107,10 +2171,10 @@
       "titleZh": "RLHF KL 惩罚",
       "difficulty": "Medium",
       "functionName": "kl_penalty",
-      "hint": "1. `kl = policy_logps - ref_logps.detach()`\n2. If `mask` is provided: `penalty = (kl * mask).sum() / mask.sum()`\n3. Return `beta * penalty`",
-      "hintZh": "1. `kl = policy_logps - ref_logps.detach()`\n2. 若提供 mask：`penalty = (kl * mask).sum() / mask.sum()`\n3. 返回 `beta * penalty`",
-      "descriptionEn": "Implement the sampled-token KL penalty commonly used in RLHF/PPO training.\n\nFor generated tokens, a simple per-token KL estimate is `policy_logp - reference_logp`; PPO-style RLHF adds `beta * KL` to discourage the policy from drifting too far from the reference model.\n\n**Signature:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_logps`, `ref_logps` — sampled-token log-probs with the same shape\n- `mask` — optional 0/1 mask for valid response tokens\n- `beta` — KL coefficient\n\n**Returns:** scalar penalty over valid tokens\n\n**Constraints:**\n- If `mask` is provided, average only over masked positions\n- `ref_logps` and `mask` should not receive gradients",
-      "descriptionZh": "实现 RLHF/PPO 训练中常见的采样 token KL 惩罚。\n\n对生成 token，一个简单的逐 token KL 估计是 `policy_logp - reference_logp`；PPO 风格 RLHF 加上 `beta * KL` 来限制策略偏离参考模型。\n\n**签名:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_logps`, `ref_logps` — 形状相同的采样 token 对数概率\n- `mask` — 可选 0/1 有效回复 token mask\n- `beta` — KL 系数\n\n**返回:** 有效 token 上的标量惩罚\n\n**约束:**\n- 若提供 `mask`，只在 mask 位置求平均\n- `ref_logps` 和 `mask` 不应接收梯度",
+      "hint": "1. `kl = policy_logps - ref_logps.detach()`\n2. If `mask` is provided: `penalty = (kl * mask).sum() / mask.sum().clamp_min(1)`\n3. Return `beta * penalty`",
+      "hintZh": "1. `kl = policy_logps - ref_logps.detach()`\n2. 若提供 mask：`penalty = (kl * mask).sum() / mask.sum().clamp_min(1)`\n3. 返回 `beta * penalty`",
+      "descriptionEn": "Implement the sampled-token KL penalty commonly used in RLHF/PPO training.\n\nFor generated tokens, a simple per-token KL estimate is `policy_logp - reference_logp`; PPO-style RLHF adds a sampled log-ratio as a KL estimator to discourage drift. Individual samples or finite minibatch means can be negative; only the expectation under the policy equals the nonnegative `KL(policy || reference)`.\n\n**Signature:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_logps`, `ref_logps` — sampled-token log-probs with the same shape\n- `mask` — optional 0/1 mask for valid response tokens\n- `beta` — KL coefficient\n\n**Returns:** scalar penalty over valid tokens\n\n**Constraints:**\n- If `mask` is provided, average only over masked positions\n- `ref_logps` and `mask` should not receive gradients",
+      "descriptionZh": "实现 RLHF/PPO 训练中常见的采样 token KL 惩罚。\n\n对生成 token，一个简单的逐 token KL 估计是 `policy_logp - reference_logp`；PPO 风格 RLHF 用采样 log-ratio 估计 KL 以限制策略偏离参考模型。单个采样值或有限批次均值可以为负；在当前策略分布下求期望才等于非负的 `KL(policy || reference)`。\n\n**签名:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_logps`, `ref_logps` — 形状相同的采样 token 对数概率\n- `mask` — 可选 0/1 有效回复 token mask\n- `beta` — KL 系数\n\n**返回:** 有效 token 上的标量惩罚\n\n**约束:**\n- 若提供 `mask`，只在 mask 位置求平均\n- `ref_logps` 和 `mask` 不应接收梯度",
       "tests": [
         {
           "name": "Unmasked mean penalty",
@@ -2127,6 +2191,56 @@
         {
           "name": "Zero when policy equals reference",
           "code": "\nimport torch\nlogps = torch.randn(3, 5)\nout = {fn}(logps, logps, mask=torch.ones_like(logps), beta=0.3)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6)\n"
+        },
+        {
+          "name": "All-zero mask gives connected zero loss",
+          "code": "\nimport torch\npolicy = torch.randn(2, 4, requires_grad=True)\nreference = torch.randn(2, 4, requires_grad=True)\nloss = {fn}(policy, reference, mask=torch.zeros(2, 4))\nassert loss.item() == 0.0 and torch.isfinite(loss)\nloss.backward()\nassert policy.grad is not None and torch.all(policy.grad == 0)\nassert reference.grad is None\n"
+        }
+      ]
+    },
+    {
+      "id": "kl_estimators_k1_k2_k3",
+      "type": "code",
+      "title": "k1 / k2 / k3 KL Estimators",
+      "titleZh": "k1 / k2 / k3 KL 估计器",
+      "difficulty": "Medium",
+      "functionName": "kl_estimators_k1_k2_k3",
+      "hint": "Let d = policy_logps - ref_logps.detach(). Return masked means of d, 0.5*d**2, and torch.expm1(-d)+d. Denominator: mask.sum().clamp_min(1). Remember the sampling distribution is policy.",
+      "hintZh": "令 d = policy_logps - ref_logps.detach()，分别计算 d、0.5*d**2 和 torch.expm1(-d)+d 的掩码平均；分母 mask.sum().clamp_min(1)。注意样本来自当前策略。",
+      "descriptionEn": "Implement Schulman's k1, k2, k3 estimators of KL(policy || reference) from log-probabilities of tokens sampled under the CURRENT policy.\n\nLet d = log pi(y|x) - log pi_ref(y|x) and r = exp(-d) = pi_ref / pi. For each sampled token:\n- k1 = d (unbiased in expectation under pi; can be negative on individual tokens)\n- k2 = 0.5 * d^2 (nonnegative but generally biased: a second-order approximation for nearby policies)\n- k3 = exp(-d) - 1 + d (unbiased in expectation under pi, nonnegative per token, often lower variance)\n\n**Signature:** `kl_estimators_k1_k2_k3(policy_logps, ref_logps, mask=None) -> (k1, k2, k3)`\n\n**Parameters:**\n- `policy_logps` — token log probabilities under current policy, shape (B, T) or any shared shape\n- `ref_logps` — log probabilities for the SAME sampled tokens under reference, same shape\n- `mask` — optional 0/1 tensor of valid generated positions, same shape\n\n**Returns:** three scalar tensors, each the mean over valid sampled positions; all-zero mask gives connected zeros.\n\n**Constraints:**\n- Detach ref_logps; gradients can flow to policy_logps, but these estimators are primarily **KL value estimators**. Differentiating the mean of on-policy sampled terms does NOT automatically yield the full KL gradient, because the sampling distribution and prefix distribution also depend on the policy.\n- Use torch.expm1(-d) + d for numerically stable k3 near d=0.\n- k1/k3 are unbiased only under the stated current-policy sampling and coverage assumptions. Old-policy/off-policy samples need correction.\n\nReference: John Schulman, \"Approximating KL Divergence\" (2020), http://joschu.net/blog/kl-approx.html.",
+      "descriptionZh": "实现 John Schulman 提出的 k1、k2、k3 KL 估计器：目标是 KL(当前策略 || Reference)，Token 必须从**当前策略**采样。\n\n令 d = log pi(y|x) - log pi_ref(y|x)，r = exp(-d) = pi_ref / pi，则逐 Token：\n- k1 = d：当前策略采样下无偏，但单个样本可以为负、方差可能较大；\n- k2 = 0.5 * d^2：逐 Token 非负，但一般有偏，只在两分布接近时构成二阶近似；\n- k3 = exp(-d) - 1 + d：在当前策略采样下无偏、逐 Token 非负，通常方差较小。\n\n**签名:** `kl_estimators_k1_k2_k3(policy_logps, ref_logps, mask=None) -> (k1, k2, k3)`\n\n**参数:**\n- `policy_logps`：当前策略对已采样 Token 的对数概率，形状 (B, T) 或其他相同形状\n- `ref_logps`：Reference 对**同一批 Token**的对数概率，同形状\n- `mask`：可选 0/1 有效生成位置掩码，同形状\n\n**返回:** 3 个标量 Tensor，分别对有效位置求平均；全零 Mask 返回仍连接 student 梯度图的 0。\n\n**约束:**\n- Reference LogProbs 要 detach；虽然可求 policy_logps 的局部梯度，但这里首先考察 **KL 数值估计**，直接反传采样估计器不一定得到完整 KL 梯度，需考虑采样分布及自回归 Prefix 依赖。\n- k3 使用 `torch.expm1(-d) + d` 改善 d 接近 0 时的数值精度。\n- k1/k3 的无偏性依赖当前策略采样及分布支持条件；旧策略或异步 Rollout 需要分布修正。\n\n参考：John Schulman, \"Approximating KL Divergence\" (2020), http://joschu.net/blog/kl-approx.html。",
+      "tests": [
+        {
+          "name": "Known per-token mathematical definitions",
+          "code": "\nimport torch\nd = torch.tensor([0.0, 0.5, -0.8], dtype=torch.float64)\nref = torch.tensor([-1.0, -1.0, -1.0], dtype=torch.float64)\nk1, k2, k3 = {fn}(ref + d, ref)\nassert torch.allclose(k1, d.mean(), atol=1e-12)\nassert torch.allclose(k2, (0.5 * d.square()).mean(), atol=1e-12)\nassert torch.allclose(k3, (d.exp().reciprocal() - 1 + d).mean(), atol=1e-12)\n"
+        },
+        {
+          "name": "k1 may be negative, k2 and k3 are pointwise nonnegative",
+          "code": "\nimport torch\npolicy = torch.tensor([-2.0, -1.0, -0.3], dtype=torch.float64)\nref = torch.tensor([-1.0, -0.5, -0.9], dtype=torch.float64)\nd = policy - ref\nfor i in range(d.numel()):\n    a,b,c = {fn}(policy[i:i+1], ref[i:i+1])\n    assert torch.allclose(a, d[i], atol=1e-12)\n    assert b.item() >= 0 and c.item() >= -1e-12\nassert {fn}(policy[:1], ref[:1])[0].item() < 0\n"
+        },
+        {
+          "name": "Weighted categorical samples: k1 and k3 match exact KL",
+          "code": "\nimport torch\nq = torch.tensor([0.65, 0.25, 0.10], dtype=torch.float64)\np = torch.tensor([0.30, 0.40, 0.30], dtype=torch.float64)\nindices = torch.tensor([0]*65 + [1]*25 + [2]*10)\na,b,c = {fn}(q.log()[indices], p.log()[indices])\nexact_kl = (q * (q.log() - p.log())).sum()\nassert torch.allclose(a, exact_kl, atol=1e-12)\nassert torch.allclose(c, exact_kl, atol=1e-12)\nassert abs(b.item() - exact_kl.item()) > 0.001, \"k2 is biased in general\"\n"
+        },
+        {
+          "name": "Mask averages valid generated positions only",
+          "code": "\nimport torch\npolicy = torch.tensor([[-0.1, -0.7, -0.3], [-1.5, -0.4, -0.2]])\nref = torch.tensor([[-0.4, -0.9, -0.2], [-1.0, -0.1, -0.5]])\nmask = torch.tensor([[1,0,1], [0,1,0]], dtype=torch.bool)\na,b,c = {fn}(policy, ref, mask)\nd = (policy-ref)[mask]\nassert torch.allclose(a, d.mean())\nassert torch.allclose(b, (0.5 * d.square()).mean())\nassert torch.allclose(c, (torch.expm1(-d) + d).mean())\n"
+        },
+        {
+          "name": "All-masked returns connected zero; teacher is detached",
+          "code": "\nimport torch\npolicy = torch.randn(2, 4, requires_grad=True)\nref = torch.randn(2, 4, requires_grad=True)\nmask = torch.zeros(2,4, dtype=torch.bool)\nout = {fn}(policy, ref, mask)\nassert all(x.shape == () and x.item() == 0.0 and x.device == policy.device for x in out)\nsum(out).backward()\nassert policy.grad is not None and torch.all(policy.grad == 0)\nassert ref.grad is None\n"
+        },
+        {
+          "name": "Gradients reach policy but not reference",
+          "code": "\nimport torch\npolicy = torch.randn(2, 5, requires_grad=True)\nref = torch.randn(2, 5, requires_grad=True)\na,b,c = {fn}(policy, ref)\n(a+b+c).backward()\nassert policy.grad is not None and policy.grad.abs().sum() > 0\nassert ref.grad is None\n"
+        },
+        {
+          "name": "k3 remains accurate for tiny log-ratios in float64",
+          "code": "\nimport torch\nd = torch.tensor([1e-5, -1e-5], dtype=torch.float64)\npolicy = torch.zeros_like(d) + d\nref = torch.zeros_like(d)\n_, k2, k3 = {fn}(policy, ref)\nassert torch.allclose(k3, k2, rtol=1e-4, atol=1e-12)\nassert k3.item() > 0\n"
+        },
+        {
+          "name": "Zero when current and reference log-probs coincide",
+          "code": "\nimport torch\nx = torch.randn(3, 5, dtype=torch.float64)\na,b,c = {fn}(x, x.clone())\nfor value in (a,b,c):\n    assert torch.allclose(value, torch.tensor(0.0, dtype=x.dtype), atol=1e-14)\n"
         }
       ]
     },
@@ -2203,8 +2317,8 @@
       "functionName": "sft_loss",
       "hint": "Use `F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=ignore_index)`.",
       "hintZh": "使用 `F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=ignore_index)`。",
-      "descriptionEn": "Implement the supervised fine-tuning (SFT) loss for language models.\n\nSFT usually trains only selected response tokens: prompt tokens are masked out with `ignore_index=-100`, and valid tokens use cross-entropy over the vocabulary.\n\n**Signature:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**Parameters:**\n- `logits` — model logits, shape `(B, T, V)`\n- `labels` — token labels, shape `(B, T)`, with ignored positions set to `ignore_index`\n\n**Returns:** scalar mean cross-entropy over non-ignored positions\n\n**Constraints:**\n- Flatten batch/time before cross-entropy\n- Ignored positions must not contribute to loss or gradients",
-      "descriptionZh": "实现语言模型监督微调（SFT）损失。\n\nSFT 通常只训练被选中的回复 token：prompt token 用 `ignore_index=-100` 遮掉，有效 token 在词表上做交叉熵。\n\n**签名:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**参数:**\n- `logits` — 模型 logits，形状 `(B, T, V)`\n- `labels` — token 标签，形状 `(B, T)`，忽略位置设为 `ignore_index`\n\n**返回:** 非忽略位置上的平均交叉熵标量\n\n**约束:**\n- 先展平 batch/time 再计算交叉熵\n- 被忽略位置不得贡献 loss 或梯度",
+      "descriptionEn": "Implement the supervised fine-tuning (SFT) loss for language models.\n\nSFT usually trains only selected response tokens: prompt tokens are masked out with `ignore_index=-100`, and valid tokens use cross-entropy over the vocabulary. Logits and labels are ALREADY ALIGNED in this exercise. For next-token causal LM training, shift them before calling this function (see `causal_lm_loss`).\n\n**Signature:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**Parameters:**\n- `logits` — model logits, shape `(B, T, V)`\n- `labels` — token labels, shape `(B, T)`, with ignored positions set to `ignore_index`\n\n**Returns:** scalar mean cross-entropy over non-ignored positions\n\n**Constraints:**\n- Flatten batch/time before cross-entropy\n- Ignored positions must not contribute to loss or gradients",
+      "descriptionZh": "实现语言模型监督微调（SFT）损失。\n\nSFT 通常只训练被选中的回复 token：prompt token 用 `ignore_index=-100` 遮掉，有效 token 在词表上做交叉熵。本题 logits 与 labels 已对齐；若直接使用原始 Causal LM logits，应先进行 next-token shift（见 `causal_lm_loss`）。\n\n**签名:** `sft_loss(logits, labels, ignore_index=-100) -> Tensor`\n\n**参数:**\n- `logits` — 模型 logits，形状 `(B, T, V)`\n- `labels` — token 标签，形状 `(B, T)`，忽略位置设为 `ignore_index`\n\n**返回:** 非忽略位置上的平均交叉熵标量\n\n**约束:**\n- 先展平 batch/time 再计算交叉熵\n- 被忽略位置不得贡献 loss 或梯度",
       "tests": [
         {
           "name": "Matches F.cross_entropy with ignore_index",
@@ -2221,6 +2335,10 @@
         {
           "name": "Scalar output",
           "code": "\nimport torch\nout = {fn}(torch.randn(3, 5, 11), torch.randint(0, 11, (3, 5)))\nassert out.dim() == 0, 'Loss must be scalar'\n"
+        },
+        {
+          "name": "All ignored positions have connected zero loss",
+          "code": "\nimport torch\nlogits = torch.randn(2, 5, 11, requires_grad=True)\nlabels = torch.full((2, 5), -100, dtype=torch.long)\nloss = {fn}(logits, labels)\nassert loss.item() == 0.0\nloss.backward()\nassert logits.grad is not None and torch.all(logits.grad == 0)\n"
         }
       ]
     },
@@ -2549,6 +2667,10 @@
         {
           "name": "Gradient reaches used logits but not the final position",
           "code": "\nimport torch\ntorch.manual_seed(2)\nlogits = torch.randn(2, 4, 5, requires_grad=True)\nlabels = torch.randint(0, 5, (2, 4))\nloss = {fn}(logits, labels)\nloss.backward()\nassert logits.grad is not None, 'Missing gradient on logits'\nassert logits.grad[:, :-1, :].abs().sum() > 0, 'Used logits should receive gradient'\nassert torch.allclose(logits.grad[:, -1, :], torch.zeros_like(logits.grad[:, -1, :])), 'Final-position logits should be unused'\n"
+        },
+        {
+          "name": "All ignored targets have connected zero loss",
+          "code": "\nimport torch\nlogits = torch.randn(2, 4, 8, requires_grad=True)\nlabels = torch.full((2, 4), -100, dtype=torch.long)\nloss = {fn}(logits, labels)\nassert loss.item() == 0.0 and loss.device == logits.device\nloss.backward()\nassert logits.grad is not None and torch.all(logits.grad == 0)\n"
         }
       ]
     },
@@ -2689,6 +2811,10 @@
         {
           "name": "Direction is teacher-to-student",
           "code": "\nimport torch\ns = torch.tensor([[2.0, 0.0, -1.0]])\nt = torch.tensor([[0.0, 1.0, 0.0]])\n# D_KL(teacher || student) is large when the student is confident where the teacher is not\nbig = {fn}(s, t, temperature=1.0)\nsmall = {fn}(t * 1.5 - s * 0.5, t, temperature=1.0)\nassert big > small, 'Loss should shrink as student moves toward the teacher'\n"
+        },
+        {
+          "name": "Teacher logits do not receive gradients",
+          "code": "\nimport torch\nstudent = torch.randn(2, 5, requires_grad=True)\nteacher = torch.randn(2, 5, requires_grad=True)\n{fn}(student, teacher).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teacher.grad is None\n"
         }
       ]
     },
@@ -2883,8 +3009,8 @@
       "functionName": "truncate_context",
       "hint": "Sum the pinned tokens first, then walk the non-pinned indices from the end while the running total + next message fits; finally sort the kept indices.",
       "hintZh": "先累加固定消息的 token，然后从尾部遍历非固定索引，只要累计+下一条仍放得下就收；最后对保留索引排序。",
-      "descriptionEn": "Fit a conversation into a token budget the way agent serving stacks do before every model call.\n\nRules of the game: `pinned` messages (system prompt, safety notices, task-critical tool results) are always kept. The remaining budget is filled with the most recent non-pinned messages, newest first. Return the indices of the kept messages in their original order — the conversation must not be reordered.\n\nThis is the core of context-window management: agent memory systems, Claude Code style compaction, and serving-side history trimming all reduce to a recency-priority packing under a budget.\n\n**Signature:** `truncate_context(messages, max_tokens) -> list[int]`\n\n**Parameters:**\n- `messages` — list of `{'role': str, 'tokens': int, 'pinned': bool}` (`pinned` optional, default `False`)\n- `max_tokens` — total token budget\n\n**Returns:** sorted list of kept message indices (ascending, original order)\n\n**Constraints:**\n- Pinned messages are always kept, even if their sum exceeds `max_tokens`\n- Non-pinned messages are added from the end of the list backwards, each taken whole or not at all, while the running total stays within `max_tokens`\n- The output preserves original indices; it is a selection, not a reorder",
-      "descriptionZh": "像 agent 服务栈在每次模型调用前那样，把对话装进 token 预算。\n\n规则：`pinned` 消息（系统提示、安全声明、任务关键的工具结果）永远保留。剩余预算从最新往旧填充非固定消息。返回被保留消息的原始顺序索引——对话不能重排。\n\n这是上下文窗口管理的核心：agent 记忆系统、Claude Code 式压缩、服务侧历史裁剪，最终都归结为预算下的近因优先装包。\n\n**签名:** `truncate_context(messages, max_tokens) -> list[int]`\n\n**参数:**\n- `messages` — `{'role': str, 'tokens': int, 'pinned': bool}` 列表（`pinned` 可选，默认 `False`）\n- `max_tokens` — 总 token 预算\n\n**返回:** 保留消息的索引列表（升序，即原始顺序）\n\n**约束:**\n- 固定消息永远保留，即使总和超过 `max_tokens`\n- 非固定消息从列表尾部往前加，每条要么整条保留要么不要，只要累计总量不超 `max_tokens`\n- 输出保持原始索引；这是选择，不是重排",
+      "descriptionEn": "Fit a conversation into a token budget the way agent serving stacks do before every model call.\n\nRules of the game: `pinned` messages (system prompt, safety notices, task-critical tool results) are always kept. The remaining budget is filled with the most recent non-pinned messages, newest first. Return the indices of the kept messages in their original order — the conversation must not be reordered.\n\nThis is a deliberately simplified whole-message recency-based truncation exercise. Real agent context compaction, memory retrieval and serving systems may summarize content, preserve tool-call dependencies and account for special tokens; they do NOT reduce to this greedy rule.\n\n**Signature:** `truncate_context(messages, max_tokens) -> list[int]`\n\n**Parameters:**\n- `messages` — list of `{'role': str, 'tokens': int, 'pinned': bool}` (`pinned` optional, default `False`)\n- `max_tokens` — total token budget\n\n**Returns:** sorted list of kept message indices (ascending, original order)\n\n**Constraints:**\n- Pinned messages are always kept, even if their sum exceeds `max_tokens`\n- Non-pinned messages are added from the end of the list backwards, each taken whole or not at all, while the running total stays within `max_tokens`\n- The output preserves original indices; it is a selection, not a reorder",
+      "descriptionZh": "像 agent 服务栈在每次模型调用前那样，把对话装进 token 预算。\n\n规则：`pinned` 消息（系统提示、安全声明、任务关键的工具结果）永远保留。剩余预算从最新往旧填充非固定消息。返回被保留消息的原始顺序索引——对话不能重排。\n\n这是教学用途的整条消息按新近程度截断题。实际 Agent Context Compaction、Memory Retrieval 和推理服务可能需要摘要、工具调用依赖与特殊 token 开销，并**不等价于**此贪心规则。\n\n**签名:** `truncate_context(messages, max_tokens) -> list[int]`\n\n**参数:**\n- `messages` — `{'role': str, 'tokens': int, 'pinned': bool}` 列表（`pinned` 可选，默认 `False`）\n- `max_tokens` — 总 token 预算\n\n**返回:** 保留消息的索引列表（升序，即原始顺序）\n\n**约束:**\n- 固定消息永远保留，即使总和超过 `max_tokens`\n- 非固定消息从列表尾部往前加，每条要么整条保留要么不要，只要累计总量不超 `max_tokens`\n- 输出保持原始索引；这是选择，不是重排",
       "tests": [
         {
           "name": "Everything fits",
@@ -3073,8 +3199,8 @@
       "functionName": "reverse_kl_loss",
       "hint": "`log_p = F.log_softmax(student/T)`, `q = F.softmax(student/T)` — both from the student; then `(q * (log_p - log_t)).sum(-1).mean() * T**2` where `log_t = F.log_softmax(teacher/T)`.",
       "hintZh": "`log_p = F.log_softmax(student/T)`、`q = F.softmax(student/T)`——都来自学生；然后 `(q * (log_p - log_t)).sum(-1).mean() * T**2`，其中 `log_t = F.log_softmax(teacher/T)`。",
-      "descriptionEn": "Implement the reverse KL divergence used by on-policy distillation and RLHF objectives: `D_KL(student || teacher)`.\n\nDirection matters. Forward KL `D_KL(teacher || student)` is mass-covering — the student spreads probability over everything the teacher likes. Reverse KL `D_KL(student || teacher)` is mode-seeking — wherever the student puts mass, the teacher must agree, so the student concentrates on the teacher's best modes. Reverse KL is the divergence you get when the student's own samples drive the loss, which is exactly what on-policy distillation (GKD-style) optimizes.\n\n**Signature:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of D_KL(student_T || teacher_T)`\n\n**Constraints:**\n- Use stable log-softmax\n- Student first — this is the opposite direction from the classic KD loss",
-      "descriptionZh": "实现在线策略蒸馏与 RLHF 目标使用的反向 KL 散度：`D_KL(student || teacher)`。\n\n方向决定行为。前向 KL `D_KL(teacher || student)` 是覆盖型——学生把概率摊到教师喜欢的一切上。反向 KL `D_KL(student || teacher)` 是模式寻求型——学生放 mass 的地方教师必须同意，于是学生集中在教师最强的模式上。当损失由学生自己的采样驱动时，得到的就是反向 KL——这正是 GKD 式在线策略蒸馏所优化的。\n\n**签名:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 D_KL(student_T || teacher_T)`\n\n**约束:**\n- 使用稳定的 log-softmax\n- 学生在前——与经典 KD 损失方向相反",
+      "descriptionEn": "Implement the reverse KL divergence used by on-policy distillation and RLHF objectives: `D_KL(student || teacher)`.\n\nDirection matters. Forward KL `D_KL(teacher || student)` is mass-covering — the student spreads probability over everything the teacher likes. Reverse KL `D_KL(student || teacher)` is mode-seeking — wherever the student puts mass, the teacher must agree, so the student concentrates on the teacher's best modes. Sampling training contexts on-policy and choosing the KL direction are separate choices. GKD-style distillation can use forward KL, reverse KL or other divergences; this exercise specifically implements reverse KL.\n\n**Signature:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of D_KL(student_T || teacher_T)`\n\n**Constraints:**\n- Use stable log-softmax\n- Student first — this is the opposite direction from the classic KD loss",
+      "descriptionZh": "实现在线策略蒸馏与 RLHF 目标使用的反向 KL 散度：`D_KL(student || teacher)`。\n\n方向决定行为。前向 KL `D_KL(teacher || student)` 是覆盖型——学生把概率摊到教师喜欢的一切上。反向 KL `D_KL(student || teacher)` 是模式寻求型——学生放 mass 的地方教师必须同意，于是学生集中在教师最强的模式上。在线策略采样与 KL 方向是两个独立选择。GKD 类方法可使用 Forward KL、Reverse KL 或其他散度；本题专门实现 Reverse KL。\n\n**签名:** `reverse_kl_loss(student_logits, teacher_logits, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 D_KL(student_T || teacher_T)`\n\n**约束:**\n- 使用稳定的 log-softmax\n- 学生在前——与经典 KD 损失方向相反",
       "tests": [
         {
           "name": "Zero when distributions match",
@@ -3095,6 +3221,10 @@
         {
           "name": "Non-negative and gradient flows to the student",
           "code": "\nimport torch\ntorch.manual_seed(1)\ns = torch.randn(3, 7, requires_grad=True)\nt = torch.randn(3, 7)\nout = {fn}(s, t)\nassert out.item() >= -1e-6, 'KL must be non-negative'\nout.backward()\nassert s.grad is not None and s.grad.abs().sum() > 0\n"
+        },
+        {
+          "name": "Stop gradient through the teacher distribution",
+          "code": "\nimport torch\nstudent = torch.randn(3, 6, requires_grad=True)\nteacher = torch.randn(3, 6, requires_grad=True)\n{fn}(student, teacher).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teacher.grad is None\n"
         }
       ]
     },
@@ -3171,6 +3301,10 @@
         {
           "name": "Prose only and unicode arguments",
           "code": "\nassert {fn}('The user asked about weather but I need more info.') == []\ncalls = {fn}('<tool_call>\\n{\"name\": \"echo\", \"arguments\": {\"text\": \"hello world\"}}\\n</tool_call>')\nassert calls == [{'name': 'echo', 'arguments': {'text': 'hello world'}}]\n"
+        },
+        {
+          "name": "Inline call and whitespace around JSON",
+          "code": "\ntext = '<tool_call>{\"name\":\"echo\",\"arguments\":{\"text\":\"ok\"}}</tool_call>' + '<tool_call>  {\"name\":\"ping\"}  </tool_call>'\nassert {fn}(text) == [{\"name\":\"echo\",\"arguments\":{\"text\":\"ok\"}},{\"name\":\"ping\",\"arguments\":{}}]\n"
         }
       ]
     },
@@ -3183,8 +3317,8 @@
       "functionName": "topk_kd_loss",
       "hint": "`vals, idx = teacher.topk(k, dim=-1)`; build a mask from `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` and apply the same mask to both sides.",
       "hintZh": "`vals, idx = teacher.topk(k, dim=-1)`；用 `torch.full_like(logits, -inf).scatter_(-1, idx, vals)` 构造掩码后的教师 logits，学生用同样的索引掩码。",
-      "descriptionEn": "Distill only the teacher's top-k logits — the MiniLM recipe for representation distillation at scale.\n\nFull-vocabulary KL wastes capacity on the teacher's long tail. MiniLM keeps only the teacher's k largest logits, masks every other position to minus infinity on both sides, and computes the KL between the renormalized truncated distributions. The student is forced to match the teacher where it is confident.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
-      "descriptionZh": "只蒸馏教师 top-k 的 logits——大规模表征蒸馏的 MiniLM 配方。\n\n全词表 KL 把容量浪费在教师的长尾上。MiniLM 只保留教师 k 个最大 logits，其余位置在两侧都置为负无穷，再在重归一化的截断分布之间算 KL。学生被迫在教师自信的地方对齐。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
+      "descriptionEn": "Practice a deliberately truncated-vocabulary teacher top-k KL. This is NOT MiniLM's representation-distillation method.\n\nHere we keep the teacher's k largest-logit positions and renormalize BOTH teacher and student over only those positions. This ignores student mass outside top-k: in particular k=1 always gives zero loss. It is a pedagogical truncated KL, not a faithful substitute for full-vocabulary KD or top-k-plus-tail approximation.\n\n**Signature:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, V)`\n- `k` — number of teacher logits to keep, `1 <= k <= V`\n- `temperature` — softening temperature `T`\n\n**Returns:** scalar loss = `T^2 * mean over batch of KL(teacher_topk_T || student_topk_T)`\n\n**Constraints:**\n- The kept positions come from the teacher's top-k (per row); all other positions are masked to `-inf` on BOTH distributions before the softmax\n- With `k = V` this reduces to the full-vocabulary KD loss",
+      "descriptionZh": "练习在教师 top-k 词表支持集上计算截断 KL。本题**不是** MiniLM 的表征蒸馏方法。\n\n本题只保留教师最大的 k 个 logits，并让教师与学生都在这 k 个位置重归一化。这会忽略学生在其他词上的概率质量，尤其 k=1 时 Loss 恒为 0。它是教学用的截断 KL，不可直接视为完整词表 KD 或 Top-k+Tail 的替代。\n\n**签名:** `topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, V)`\n- `k` — 保留的教师 logits 数，`1 <= k <= V`\n- `temperature` — 软化温度 `T`\n\n**返回:** 标量损失 = `T^2 * batch 平均的 KL(teacher_topk_T || student_topk_T)`\n\n**约束:**\n- 保留位置来自教师每行的 top-k；softmax 前两侧分布的其余位置都置 `-inf`\n- `k = V` 时退化为全词表 KD 损失",
       "tests": [
         {
           "name": "Reduces to full KD when k equals vocabulary",
@@ -3205,6 +3339,10 @@
         {
           "name": "Teacher tail is dropped, only the top-k shape matters",
           "code": "\nimport torch\nt = torch.tensor([[5.0, 4.0, 3.0, 2.0, 1.0]])\ns_aligned = torch.tensor([[5.0, 4.0, 3.0, 2.0, 1.0]])\ns_mass_elsewhere = torch.tensor([[-1.0, -2.0, 5.0, 4.0, 3.0]])\ns_swapped = torch.tensor([[4.0, 5.0, 3.0, 2.0, 1.0]])\nout_aligned = {fn}(s_aligned, t, k=2)\nout_mass = {fn}(s_mass_elsewhere, t, k=2)\nout_swapped = {fn}(s_swapped, t, k=2)\nassert out_aligned.item() < 1e-6, 'Matching teacher top-2 should be near zero'\nassert out_mass.item() < 1e-6, f'Student mass outside the top-k support is invisible, got {out_mass.item()}'\nassert out_swapped.item() > 0.3, f'Swapped top-2 ordering must be penalized, got {out_swapped.item()}'\n"
+        },
+        {
+          "name": "Teacher gradients are stopped; invalid k is rejected",
+          "code": "\nimport torch\nstudent = torch.randn(2, 8, requires_grad=True)\nteacher = torch.randn(2, 8, requires_grad=True)\n{fn}(student, teacher, 3).backward()\nassert student.grad is not None and teacher.grad is None\nfor k in (0, 9):\n    try:\n        {fn}(student.detach(), teacher.detach(), k)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(f\"invalid k={k} must raise\")\n"
         }
       ]
     },
@@ -3242,7 +3380,11 @@
         },
         {
           "name": "Differs from flat per-token mean on mixed spans",
-          "code": "\nimport torch\ntorch.manual_seed(4)\ns = torch.randn(10, 5)\nt = torch.randn(10, 5)\nspans = [(0, 2), (8, 10)]\nlog_p = torch.log_softmax(s, dim=-1)\np = log_p.exp()\nper_tok = (p * (log_p - torch.log_softmax(t, dim=-1))).sum(-1)\nflat = per_tok[[0, 1, 8, 9]].mean()\nspan_norm = (per_tok[0:2].mean() + per_tok[8:10].mean()) / 2\nout = {fn}(s, t, spans)\nassert torch.allclose(out, span_norm, atol=1e-6)\n# flat and span-normalized coincide only when both spans have equal length\nif not torch.allclose(flat, span_norm, atol=1e-6):\n    pass  # same lengths here, but the assertion above is the real contract\n"
+          "code": "\nimport torch\ntorch.manual_seed(4)\ns = torch.randn(10, 5)\nt = torch.randn(10, 5)\nspans = [(0, 1), (6, 10)]\nlog_p = torch.log_softmax(s, dim=-1)\np = log_p.exp()\nper_tok = (p * (log_p - torch.log_softmax(t, dim=-1))).sum(-1)\nflat = per_tok[[0, 6, 7, 8, 9]].mean()\nspan_norm = (per_tok[0:1].mean() + per_tok[6:10].mean()) / 2\nout = {fn}(s, t, spans)\nassert torch.allclose(out, span_norm, atol=1e-6)\n# Different action lengths produce genuinely different weightings.\nassert not torch.allclose(flat, span_norm, atol=1e-6)\n"
+        },
+        {
+          "name": "Teacher stopped and empty-span zero connected to student",
+          "code": "\nimport torch\nstudent = torch.randn(8, 7, requires_grad=True)\nteacher = torch.randn(8, 7, requires_grad=True)\n{fn}(student, teacher, [(1, 4), (5, 6)]).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teacher.grad is None\nstudent.grad = None\nzero = {fn}(student, teacher, [])\nassert zero.item() == 0.0 and zero.device == student.device\nzero.backward()\nassert student.grad is not None and torch.all(student.grad == 0)\n"
         }
       ]
     },
@@ -3295,10 +3437,10 @@
       "titleZh": "在线策略蒸馏损失（GKD）",
       "difficulty": "Hard",
       "functionName": "on_policy_distillation_loss",
-      "hint": "Per-token reverse KL gives `(B, T)`; select with `kl[generated_mask]`, `.mean()` over the selection; guard `numel() == 0` and return `torch.zeros(())`.",
-      "hintZh": "逐 token 反向 KL 得 `(B, T)`；用 `kl[generated_mask]` 选取后 `.mean()`；`numel() == 0` 时守卫返回 `torch.zeros(())`。",
-      "descriptionEn": "Implement the core objective of on-policy knowledge distillation — the GKD recipe.\n\nThe tokens the student generated itself (from its own sampling distribution) carry the distribution mismatch the training must fix. The trajectory contains both student-generated tokens and foreign tokens — the prompt, environment observations, tool outputs. Per-token reverse KL `D_KL(student_t || teacher_t)` is computed ONLY at positions the student produced, averaged over those positions, scaled by `T^2`.\n\nTraining on the student's own rollout data is what makes this on-policy: the student never drifts onto inputs it would not itself visit, and the objective is the mode-seeking reverse KL at exactly those states.\n\n**Signature:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, T, V)`\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * mean over masked positions of D_KL(student_T || teacher_T)`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The denominator is the number of masked positions, not `B*T`\n- Logits at unmasked positions must not influence the loss",
-      "descriptionZh": "实现在线策略知识蒸馏的核心目标——GKD 配方。\n\n学生自己生成（从它自己的采样分布）的 token 承载着训练要修正的分布失配。轨迹里既有学生生成的 token，也有外来 token——提示词、环境观察、工具输出。逐 token 的反向 KL `D_KL(student_t || teacher_t)` 只在学生产出的位置计算，对这些位置求平均，再乘 `T^2`。\n\n在学生自己的 rollout 数据上训练，这才是“在线策略”：学生永远不会漂到它自己不会到达的输入上，目标函数也恰是在这些状态上的模式寻求型反向 KL。\n\n**签名:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, T, V)`\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * 被掩码位置的 D_KL(student_T || teacher_T) 平均`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 分母是掩码位置数，不是 `B*T`\n- 未掩码位置的 logits 不得影响损失",
+      "hint": "Per-token reverse KL gives `(B, T)`; select with `kl[generated_mask]`, `.mean()` over the selection; guard an empty mask with `student_logits.sum() * 0` to preserve device and gradient graph; detach teacher logits.",
+      "hintZh": "逐 token 反向 KL 得 `(B, T)`；用 `kl[generated_mask]` 选取后 `.mean()`；空 mask 时返回 `student_logits.sum() * 0` 保持 device 与梯度图；teacher logits 需要 detach。",
+      "descriptionEn": "Implement a GKD-style on-policy distillation example with a chosen reverse-KL objective. GKD-style methods may instead use forward KL, JSD or other divergences.\n\nThe tokens the student generated itself (from its own sampling distribution) carry the distribution mismatch the training must fix. The trajectory contains both student-generated tokens and foreign tokens — the prompt, environment observations, tool outputs. Per-token reverse KL `D_KL(student_t || teacher_t)` is computed ONLY at positions the student produced, averaged over those positions, scaled by `T^2`.\n\nTraining on the student's own rollout contexts is the on-policy aspect. This exercise assumes those contexts and a generated-token mask are already provided: it does NOT generate rollouts, and reverse KL is an independent design choice.\n\n**Signature:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits`, `teacher_logits` — shape `(B, T, V)`\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * mean over masked positions of D_KL(student_T || teacher_T)`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The denominator is the number of masked positions, not `B*T`\n- Logits at unmasked positions must not influence the loss",
+      "descriptionZh": "实现一个以 Reverse KL 为选择的 GKD 类 On-Policy 蒸馏练习。GKD 类方法也可以采用 Forward KL、JSD 或其他散度。\n\n学生自己生成（从它自己的采样分布）的 token 承载着训练要修正的分布失配。轨迹里既有学生生成的 token，也有外来 token——提示词、环境观察、工具输出。逐 token 的反向 KL `D_KL(student_t || teacher_t)` 只在学生产出的位置计算，对这些位置求平均，再乘 `T^2`。\n\nOn-Policy 指使用学生自己的 rollout 上下文进行训练。本题假定 rollout 与 generated-token mask 已提供，本身不执行采样；Reverse KL 是独立于采样方式的另一项设计选择。\n\n**签名:** `on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits`、`teacher_logits` — 形状 `(B, T, V)`\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * 被掩码位置的 D_KL(student_T || teacher_T) 平均`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 分母是掩码位置数，不是 `B*T`\n- 未掩码位置的 logits 不得影响损失",
       "tests": [
         {
           "name": "Zero when student matches teacher on generated tokens",
@@ -3310,7 +3452,7 @@
         },
         {
           "name": "Unmasked logits are invisible",
-          "code": "\nimport torch\ntorch.manual_seed(2)\ns = torch.randn(2, 4, 6)\nt = torch.randn(2, 4, 6)\nmask = torch.tensor([[True, False, True, False], [True, True, True, False]])\nbase = {fn}(s, t, mask)\ns_perturbed = s.clone()\ns_perturbed[:, [1, 3]] += 50.0   # torch advanced indexing\nout = {fn}(s_perturbed, t, mask)\nassert torch.allclose(base, out, atol=1e-5), 'Prompt/observation logits must not affect the loss'\n"
+          "code": "\nimport torch\ntorch.manual_seed(2)\ns = torch.randn(2, 4, 6)\nt = torch.randn(2, 4, 6)\nmask = torch.tensor([[True, False, True, False], [True, True, True, False]])\nbase = {fn}(s, t, mask)\ns_perturbed = s.clone()\ns_perturbed[~mask] = s_perturbed[~mask] + torch.randn_like(s_perturbed[~mask]) * 20.0\nout = {fn}(s_perturbed, t, mask)\nassert torch.allclose(base, out, atol=1e-5), 'Prompt/observation logits must not affect the loss'\n"
         },
         {
           "name": "Empty mask returns exact zero",
@@ -3322,7 +3464,11 @@
         },
         {
           "name": "Gradually drifting student sees growing loss",
-          "code": "\nimport torch\ntorch.manual_seed(4)\nt = torch.randn(2, 4, 6)\nmask = torch.ones(2, 4, dtype=torch.bool)\nlosses = []\nfor eps in (0.0, 0.5, 2.0):\n    s = t + eps * torch.randn(2, 4, 6)\n    losses.append({fn}(s, t, mask).item())\nassert losses[0] < losses[1] < losses[2], f'Loss must grow with student drift: {losses}'\n"
+          "code": "\nimport torch\ntorch.manual_seed(4)\nt = torch.randn(2, 4, 6)\nmask = torch.ones(2, 4, dtype=torch.bool)\nlosses = []\ndirection = torch.randn(2, 4, 6)\nfor eps in (0.0, 0.5, 2.0):\n    s = t + eps * direction\n    losses.append({fn}(s, t, mask).item())\nassert losses[0] < losses[1] < losses[2], f'Loss must grow with student drift: {losses}'\n"
+        },
+        {
+          "name": "Teacher stop-grad and connected empty-mask zero",
+          "code": "\nimport torch\nstudent = torch.randn(2, 4, 6, requires_grad=True)\nteacher = torch.randn(2, 4, 6, requires_grad=True)\nmask = torch.ones(2, 4, dtype=torch.bool)\n{fn}(student, teacher, mask).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teacher.grad is None\nstudent.grad = None\nzero = {fn}(student, teacher, torch.zeros_like(mask))\nassert zero.item() == 0.0 and zero.device == student.device\nzero.backward()\nassert student.grad is not None and torch.all(student.grad == 0)\n"
         }
       ]
     },
@@ -3553,14 +3699,14 @@
     {
       "id": "multi_teacher_opd",
       "type": "code",
-      "title": "Multi-Teacher On-Policy Distillation (MiMo MOPD)",
-      "titleZh": "多教师在线策略蒸馏（MiMo MOPD）",
+      "title": "Generic Multi-Teacher On-Policy KL (MOPD-style)",
+      "titleZh": "多教师 On-Policy KL（MOPD 风格简化实现）",
       "difficulty": "Hard",
       "functionName": "multi_teacher_opd_loss",
       "hint": "Loop over teachers: `log_t = log_softmax(stack[m].detach() / T)`; per-token reverse KL, select with the mask, `.mean()`; accumulate `w_m * kl_m`; multiply the total by `T^2` once. Guard the empty mask.",
       "hintZh": "逐教师循环：`log_t = log_softmax(stack[m].detach() / T)`；逐 token 反向 KL，掩码选取后 `.mean()`；累加 `w_m * kl_m`；最后整体乘一次 `T^2`。空掩码要守卫。",
-      "descriptionEn": "Blend several teachers into one on-policy distillation loss — the objective behind Xiaomi MiMo's MOPD (Multi-Teacher On-Policy Distillation), used in MiMo-V2.6 post-training to merge distinct teachers' capabilities into a single student.\n\nOne teacher is rarely best at everything: a math teacher, a coding teacher, a generalist. MOPD-style training keeps the student's own rollouts as the data (the on-policy property) and scores them against every teacher, combining the per-teacher signals with capability-mix weights. Each teacher contributes `w_m` of its masked reverse-KL; the weights are the knobs that decide which capability dominates this stage of training. (MiMo's exact weighting scheme is not public — this is the generic multi-teacher objective it instantiates.)\n\n**Signature:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`, one teacher per leading slot\n- `teacher_weights` — `(M,)`, non-negative capability-mix weights\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * sum_m w_m * (mean over masked positions of D_KL(student || teacher_m))`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The same masked positions and the same denominator are shared by every teacher's term\n- Teachers are detached: gradients flow only to the student\n- Logits at unmasked positions must not influence the loss",
-      "descriptionZh": "把多个教师融合进一个在线策略蒸馏损失——小米 MiMo 的 MOPD（Multi-Teacher On-Policy Distillation）背后的目标，用于 MiMo-V2.6 后训练，把不同教师的能力合并进一个学生。\n\n单个教师很少样样最强：数学教师、代码教师、通才各有所长。MOPD 式训练保持学生自己的 rollout 作为数据（在线策略性质），对每个教师分别打分，再用能力组合权重融合各路信号。每个教师贡献 `w_m` 份其掩码反向 KL；权重就是决定这个训练阶段哪种能力主导的旋钮。（MiMo 的精确加权方案未公开——本题实现的是它实例化的通用多教师目标。）\n\n**签名:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`，逐个教师堆叠\n- `teacher_weights` — `(M,)`，非负能力组合权重\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * Σ_m w_m * (掩码位置的 D_KL(student || teacher_m) 平均)`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 每个教师项共享同一掩码位置和同一分母\n- 教师 detach：梯度只流给学生\n- 未掩码位置的 logits 不得影响损失",
+      "descriptionEn": "Practice a generic weighted multi-teacher reverse-KL objective on student-sampled trajectories (MOPD-style). This is a teaching simplification, NOT an exact reconstruction of Xiaomi MiMo's training recipe.\n\nOne teacher is rarely best at everything: a math teacher, a coding teacher, a generalist. In this exercise the student's rollout logits are supplied, and each teacher contributes a weighted masked reverse KL. Real multi-teacher systems may use task-dependent teacher selection, different data sources, different KL directions, and other training details. Each teacher contributes `w_m` of its masked reverse-KL; the weights are the knobs that decide which capability dominates this stage of training. (Do not infer a specific MiMo weighting scheme from this example.)\n\n**Signature:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**Parameters:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`, one teacher per leading slot\n- `teacher_weights` — `(M,)`, non-negative capability-mix weights\n- `generated_mask` — boolean `(B, T)`, `True` where the token was sampled from the student\n- `temperature` — softening temperature\n\n**Returns:** scalar = `T^2 * sum_m w_m * (mean over masked positions of D_KL(student || teacher_m))`; exactly `0.0` when no position is masked\n\n**Constraints:**\n- The same masked positions and the same denominator are shared by every teacher's term\n- Teachers are detached: gradients flow only to the student\n- Logits at unmasked positions must not influence the loss",
+      "descriptionZh": "练习一个在学生 rollout 上对多教师 Reverse KL 加权的通用目标（MOPD 风格）。这是教学简化实现，**不是**小米 MiMo 真实 MOPD 训练方案的精确复现。\n\n单个教师很少样样最强：数学教师、代码教师、通才各有所长。本题假定学生 rollout 已提供，并加权汇总各教师的掩码 Reverse KL。真实多教师系统还可能采用不同任务的教师选择、不同数据来源、不同 KL 方向及其他训练细节。每个教师贡献 `w_m` 份其掩码反向 KL；权重就是决定这个训练阶段哪种能力主导的旋钮。（不能据此推断 MiMo 采用了这套具体加权方案。）\n\n**签名:** `multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0) -> Tensor`\n\n**参数:**\n- `student_logits` — `(B, T, V)`\n- `teacher_logits_stack` — `(M, B, T, V)`，逐个教师堆叠\n- `teacher_weights` — `(M,)`，非负能力组合权重\n- `generated_mask` — 布尔 `(B, T)`，学生采样的 token 位置为 `True`\n- `temperature` — 软化温度\n\n**返回:** 标量 = `T^2 * Σ_m w_m * (掩码位置的 D_KL(student || teacher_m) 平均)`；无掩码位置时恰为 `0.0`\n\n**约束:**\n- 每个教师项共享同一掩码位置和同一分母\n- 教师 detach：梯度只流给学生\n- 未掩码位置的 logits 不得影响损失",
       "tests": [
         {
           "name": "Zero when the student matches the only teacher",
@@ -3589,6 +3735,10 @@
         {
           "name": "Single teacher reduces to the on-policy loss",
           "code": "\nimport torch\ntorch.manual_seed(5)\ns = torch.randn(2, 4, 8)\nt = torch.randn(2, 4, 8)\nmask = torch.tensor([[True, True, True, False], [True, True, True, True]])\nT = 2.0\nout = {fn}(s, t.unsqueeze(0), torch.ones(1), mask, temperature=T)\nlog_p = torch.log_softmax(s / T, dim=-1)\np = log_p.exp()\nlog_t = torch.log_softmax(t / T, dim=-1)\nper_tok = (p * (log_p - log_t)).sum(-1)\nexpected = per_tok[mask].mean() * T**2\nassert torch.allclose(out, expected, atol=1e-6), 'M=1 with weight 1 is the plain on-policy loss'\n"
+        },
+        {
+          "name": "Teacher weights detached and empty-mask zero differentiable",
+          "code": "\nimport torch\nstudent = torch.randn(2, 3, 6, requires_grad=True)\nteachers = torch.randn(2, 2, 3, 6, requires_grad=True)\nweights = torch.tensor([0.5, 0.5], requires_grad=True)\nmask = torch.ones(2, 3, dtype=torch.bool)\n{fn}(student, teachers, weights, mask).backward()\nassert student.grad is not None and student.grad.abs().sum() > 0\nassert teachers.grad is None and weights.grad is None\nstudent.grad = None\nempty = {fn}(student, teachers, weights, ~mask)\nempty.backward()\nassert empty.item() == 0.0 and torch.all(student.grad == 0)\n"
         }
       ]
     },
@@ -3631,6 +3781,10 @@
         {
           "name": "Zero offsets reduce to plain on-policy distillation",
           "code": "\nimport torch\nimport torch.nn.functional as F\ntorch.manual_seed(5)\nB, T, V = 2, 5, 10\nstud = torch.randn(B, T, V)\nteacher_view = torch.randn(B, T, V)\noff = torch.zeros(B, dtype=torch.long)\nmask = torch.tensor([[True, True, True, True, False], [True, True, False, True, True]])\ntemp = 2.0\nout = {fn}(stud, teacher_view, off, mask, temperature=temp)\nlog_p = F.log_softmax(stud / temp, dim=-1)\np = log_p.exp()\nlog_t = F.log_softmax(teacher_view / temp, dim=-1)\nper_tok = (p * (log_p - log_t)).sum(dim=-1)\nexpected = per_tok[mask].mean() * temp ** 2\nassert torch.allclose(out, expected, atol=1e-6), 'offsets=0 must equal the plain on-policy loss'\n"
+        },
+        {
+          "name": "Empty mask keeps dtype device and gradient connection",
+          "code": "\nimport torch\nstudent = torch.randn(2, 3, 5, requires_grad=True)\nprivileged = torch.randn(2, 8, 5, requires_grad=True)\nmask = torch.zeros(2, 3, dtype=torch.bool)\nout = {fn}(student, privileged, torch.tensor([1, 2]), mask)\nassert out.item() == 0.0 and out.device == student.device and out.dtype == student.dtype\nout.backward()\nassert student.grad is not None and torch.all(student.grad == 0)\nassert privileged.grad is None\n"
         }
       ]
     },

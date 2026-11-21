@@ -97,54 +97,50 @@ w, b = model.closed_form(X, y)
 assert not w.requires_grad, 'Closed-form w should not require grad'
 """,
         },
+        {
+            "name": "float64 inputs work in all three methods",
+            "code": """
+import torch
+torch.manual_seed(9)
+X = torch.randn(60, 3, dtype=torch.float64)
+w_true = torch.tensor([1.2, -0.4, 0.7], dtype=torch.float64)
+y = X @ w_true + 0.8
+m = {fn}()
+for method in (m.closed_form, m.gradient_descent, m.nn_linear):
+    kw = {} if method == m.closed_form else {"lr": 0.05, "steps": 600}
+    w, b = method(X, y, **kw)
+    assert w.dtype == X.dtype and b.dtype == X.dtype
+    assert torch.allclose(w, w_true, atol=0.08)
+    assert abs(b.item() - 0.8) < 0.08
+""",
+        },
     ],
     "solution": '''class LinearRegression:
     def closed_form(self, X: torch.Tensor, y: torch.Tensor):
-        """Normal equation via augmented matrix."""
-        N, D = X.shape
-        # Augment X with ones column for bias
-        X_aug = torch.cat([X, torch.ones(N, 1)], dim=1)  # (N, D+1)
-        # Solve (X^T X) theta = X^T y
-        theta = torch.linalg.lstsq(X_aug, y).solution      # (D+1,)
-        w = theta[:D]
-        b = theta[D]
-        return w.detach(), b.detach()
+        n, d = X.shape
+        X_aug = torch.cat([X, torch.ones(n, 1, device=X.device, dtype=X.dtype)], dim=1)
+        theta = torch.linalg.lstsq(X_aug, y).solution
+        return theta[:d].detach(), theta[d].detach()
 
-    def gradient_descent(self, X: torch.Tensor, y: torch.Tensor,
-                         lr: float = 0.01, steps: int = 1000):
-        """Manual gradient computation — no autograd."""
-        N, D = X.shape
-        w = torch.zeros(D)
-        b = torch.tensor(0.0)
-
+    def gradient_descent(self, X: torch.Tensor, y: torch.Tensor, lr=0.01, steps=1000):
+        n, d = X.shape
+        w = torch.zeros(d, device=X.device, dtype=X.dtype)
+        b = torch.zeros((), device=X.device, dtype=X.dtype)
         for _ in range(steps):
-            pred = X @ w + b          # (N,)
-            error = pred - y           # (N,)
-            grad_w = (2.0 / N) * (X.T @ error)  # (D,)
-            grad_b = (2.0 / N) * error.sum()     # scalar
-            w = w - lr * grad_w
-            b = b - lr * grad_b
-
+            err = X @ w + b - y
+            w = w - lr * (2.0 / n) * (X.T @ err)
+            b = b - lr * (2.0 / n) * err.sum()
         return w, b
 
-    def nn_linear(self, X: torch.Tensor, y: torch.Tensor,
-                  lr: float = 0.01, steps: int = 1000):
-        """PyTorch nn.Linear with autograd training loop."""
-        N, D = X.shape
-        layer = nn.Linear(D, 1)
+    def nn_linear(self, X: torch.Tensor, y: torch.Tensor, lr=0.01, steps=1000):
+        layer = nn.Linear(X.shape[1], 1, device=X.device, dtype=X.dtype)
         optimizer = torch.optim.SGD(layer.parameters(), lr=lr)
-        loss_fn = nn.MSELoss()
-
         for _ in range(steps):
             optimizer.zero_grad()
-            pred = layer(X).squeeze(-1)  # (N,)
-            loss = loss_fn(pred, y)
+            loss = F.mse_loss(layer(X).squeeze(-1), y)
             loss.backward()
             optimizer.step()
-
-        w = layer.weight.data.squeeze(0)  # (D,)
-        b = layer.bias.data.squeeze(0)    # scalar ()
-        return w, b''',
+        return layer.weight.detach().squeeze(0).clone(), layer.bias.detach().squeeze(0).clone()''',
     "demo": """torch.manual_seed(42)
 X = torch.randn(100, 3)
 true_w = torch.tensor([2.0, -1.0, 0.5])

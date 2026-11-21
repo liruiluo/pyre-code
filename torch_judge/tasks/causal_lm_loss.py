@@ -78,16 +78,26 @@ assert logits.grad[:, :-1, :].abs().sum() > 0, 'Used logits should receive gradi
 assert torch.allclose(logits.grad[:, -1, :], torch.zeros_like(logits.grad[:, -1, :])), 'Final-position logits should be unused'
 """,
         },
+        {
+            "name": "All ignored targets have connected zero loss",
+            "code": """
+import torch
+logits = torch.randn(2, 4, 8, requires_grad=True)
+labels = torch.full((2, 4), -100, dtype=torch.long)
+loss = {fn}(logits, labels)
+assert loss.item() == 0.0 and loss.device == logits.device
+loss.backward()
+assert logits.grad is not None and torch.all(logits.grad == 0)
+""",
+        },
     ],
     "solution": '''def causal_lm_loss(logits, labels, ignore_index=-100):
-    vocab_size = logits.shape[-1]
-    shift_logits = logits[:, :-1, :].contiguous()
-    shift_labels = labels[:, 1:].contiguous()
-    return F.cross_entropy(
-        shift_logits.view(-1, vocab_size),
-        shift_labels.view(-1),
-        ignore_index=ignore_index,
-    )''',
+    v = logits.shape[-1]
+    shifted_logits = logits[:, :-1, :].reshape(-1, v)
+    shifted_labels = labels[:, 1:].reshape(-1)
+    if not (shifted_labels != ignore_index).any():
+        return shifted_logits.sum() * 0.0
+    return F.cross_entropy(shifted_logits, shifted_labels, ignore_index=ignore_index)''',
     "demo": """torch.manual_seed(0)
 logits = torch.randn(2, 5, 10)
 labels = torch.randint(0, 10, (2, 5))

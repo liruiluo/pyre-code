@@ -73,7 +73,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def accumulated_step(model, optimizer, loss_fn, micro_batches):\n    optimizer.zero_grad()\n    total_loss = 0.0\n    n = len(micro_batches)\n    for x, y in micro_batches:\n        loss = loss_fn(model(x), y) / n\n        loss.backward()\n        total_loss += loss.item()\n    optimizer.step()\n    return total_loss",
+        "source": "def accumulated_step(model, optimizer, loss_fn, micro_batches):\n    if not micro_batches:\n        raise ValueError(\"micro_batches must not be empty\")\n    total_samples = sum(x.shape[0] for x, _ in micro_batches)\n    if total_samples <= 0:\n        raise ValueError(\"micro_batches must contain samples\")\n    optimizer.zero_grad()\n    total_loss = 0.0\n    for x, y in micro_batches:\n        if x.shape[0] == 0:\n            continue\n        # For mean-reduced losses, weight by the number of examples.\n        weight = x.shape[0] / total_samples\n        loss = loss_fn(model(x), y) * weight\n        loss.backward()\n        total_loss += loss.item()\n    optimizer.step()\n    return total_loss",
         "role": "solution"
       },
       {
@@ -87,7 +87,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def clip_grad_norm(parameters, max_norm):\n    parameters = [p for p in parameters if p.grad is not None]\n    total_norm = torch.sqrt(sum(p.grad.norm() ** 2 for p in parameters))\n    clip_coef = max_norm / (total_norm + 1e-6)\n    if clip_coef < 1:\n        for p in parameters:\n            p.grad.mul_(clip_coef)\n    return total_norm.item()",
+        "source": "def clip_grad_norm(parameters, max_norm):\n    if max_norm < 0:\n        raise ValueError(\"max_norm must be non-negative\")\n    grads = [p.grad for p in parameters if p.grad is not None]\n    if not grads:\n        return 0.0\n    total_norm = torch.sqrt(sum(g.detach().pow(2).sum() for g in grads))\n    scale = max_norm / (total_norm + 1e-6)\n    if scale < 1:\n        for grad in grads:\n            grad.mul_(scale)\n    return total_norm.item()",
         "role": "solution"
       },
       {
@@ -115,7 +115,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef kd_loss(student_logits, teacher_logits, temperature=2.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    q = F.softmax(teacher_logits / temperature, dim=-1)\n    kl = F.kl_div(log_p, q, reduction=\"batchmean\")\n    return kl * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef kd_loss(student_logits, teacher_logits, temperature=2.0):\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    teacher_probs = F.softmax(teacher_logits.detach() / temperature, dim=-1)\n    return F.kl_div(log_student, teacher_probs, reduction=\"batchmean\") * temperature ** 2",
         "role": "solution"
       },
       {
@@ -325,7 +325,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "class MyAdam:\n    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):\n        self.params = list(params)\n        self.lr = lr\n        self.beta1, self.beta2 = betas\n        self.eps = eps\n        self.t = 0\n        self.m = [torch.zeros_like(p) for p in self.params]\n        self.v = [torch.zeros_like(p) for p in self.params]\n\n    def step(self):\n        self.t += 1\n        with torch.no_grad():\n            for i, p in enumerate(self.params):\n                if p.grad is None:\n                    continue\n                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * p.grad\n                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * p.grad ** 2\n                m_hat = self.m[i] / (1 - self.beta1 ** self.t)\n                v_hat = self.v[i] / (1 - self.beta2 ** self.t)\n                p -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
+        "source": "class MyAdam:\n    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):\n        self.params = list(params)\n        self.lr = lr\n        self.beta1, self.beta2 = betas\n        self.eps = eps\n        self.t = [0 for _ in self.params]\n        self.m = [torch.zeros_like(p) for p in self.params]\n        self.v = [torch.zeros_like(p) for p in self.params]\n\n    def step(self):\n        with torch.no_grad():\n            for i, p in enumerate(self.params):\n                if p.grad is None:\n                    continue\n                self.t[i] += 1\n                grad = p.grad\n                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * grad\n                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * grad.square()\n                m_hat = self.m[i] / (1 - self.beta1 ** self.t[i])\n                v_hat = self.v[i] / (1 - self.beta2 ** self.t[i])\n                p -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
         "role": "solution"
       },
       {
@@ -451,7 +451,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def causal_lm_loss(logits, labels, ignore_index=-100):\n    vocab_size = logits.shape[-1]\n    shift_logits = logits[:, :-1, :].contiguous()\n    shift_labels = labels[:, 1:].contiguous()\n    return F.cross_entropy(\n        shift_logits.view(-1, vocab_size),\n        shift_labels.view(-1),\n        ignore_index=ignore_index,\n    )",
+        "source": "def causal_lm_loss(logits, labels, ignore_index=-100):\n    v = logits.shape[-1]\n    shifted_logits = logits[:, :-1, :].reshape(-1, v)\n    shifted_labels = labels[:, 1:].reshape(-1)\n    if not (shifted_labels != ignore_index).any():\n        return shifted_logits.sum() * 0.0\n    return F.cross_entropy(shifted_logits, shifted_labels, ignore_index=ignore_index)",
         "role": "solution"
       },
       {
@@ -535,7 +535,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def dpo_loss(policy_chosen_logps, policy_rejected_logps,\n             ref_chosen_logps, ref_rejected_logps, beta=0.1):\n    chosen_rewards = beta * (policy_chosen_logps - ref_chosen_logps)\n    rejected_rewards = beta * (policy_rejected_logps - ref_rejected_logps)\n    diff = chosen_rewards - rejected_rewards\n    return -torch.log(torch.sigmoid(diff)).mean()",
+        "source": "def dpo_loss(policy_chosen_logps, policy_rejected_logps,\n             ref_chosen_logps, ref_rejected_logps, beta=0.1):\n    chosen = policy_chosen_logps - ref_chosen_logps.detach()\n    rejected = policy_rejected_logps - ref_rejected_logps.detach()\n    preference_logit = beta * (chosen - rejected)\n    return F.softplus(-preference_logit).mean()",
         "role": "solution"
       },
       {
@@ -619,7 +619,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1):\n    kl = policy_logps - ref_logps.detach()\n    if mask is None:\n        return beta * kl.mean()\n    mask = mask.to(dtype=kl.dtype).detach()\n    return beta * (kl * mask).sum() / mask.sum()",
+        "source": "def kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1):\n    # A sampled log-ratio can be negative; its policy expectation is KL.\n    log_ratio = policy_logps - ref_logps.detach()\n    if mask is None:\n        return beta * log_ratio.mean()\n    valid = mask.to(device=log_ratio.device, dtype=log_ratio.dtype).detach()\n    return beta * (log_ratio * valid).sum() / valid.sum().clamp_min(1)",
         "role": "solution"
       },
       {
@@ -647,7 +647,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "class SimpleLinear:\n    def __init__(self, in_features: int, out_features: int):\n        self.weight = torch.randn(out_features, in_features) * (1 / math.sqrt(in_features))\n        self.weight.requires_grad_(True)\n        self.bias = torch.zeros(out_features, requires_grad=True)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        return x @ self.weight.T + self.bias",
+        "source": "class SimpleLinear:\n    def __init__(self, in_features: int, out_features: int):\n        self.weight = torch.randn(out_features, in_features) * math.sqrt(2.0 / in_features)\n        self.weight.requires_grad_(True)\n        self.bias = torch.zeros(out_features, requires_grad=True)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        return x @ self.weight.T + self.bias",
         "role": "solution"
       },
       {
@@ -661,7 +661,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "class LinearRegression:\n    def closed_form(self, X: torch.Tensor, y: torch.Tensor):\n        \"\"\"Normal equation via augmented matrix.\"\"\"\n        N, D = X.shape\n        # Augment X with ones column for bias\n        X_aug = torch.cat([X, torch.ones(N, 1)], dim=1)  # (N, D+1)\n        # Solve (X^T X) theta = X^T y\n        theta = torch.linalg.lstsq(X_aug, y).solution      # (D+1,)\n        w = theta[:D]\n        b = theta[D]\n        return w.detach(), b.detach()\n\n    def gradient_descent(self, X: torch.Tensor, y: torch.Tensor,\n                         lr: float = 0.01, steps: int = 1000):\n        \"\"\"Manual gradient computation — no autograd.\"\"\"\n        N, D = X.shape\n        w = torch.zeros(D)\n        b = torch.tensor(0.0)\n\n        for _ in range(steps):\n            pred = X @ w + b          # (N,)\n            error = pred - y           # (N,)\n            grad_w = (2.0 / N) * (X.T @ error)  # (D,)\n            grad_b = (2.0 / N) * error.sum()     # scalar\n            w = w - lr * grad_w\n            b = b - lr * grad_b\n\n        return w, b\n\n    def nn_linear(self, X: torch.Tensor, y: torch.Tensor,\n                  lr: float = 0.01, steps: int = 1000):\n        \"\"\"PyTorch nn.Linear with autograd training loop.\"\"\"\n        N, D = X.shape\n        layer = nn.Linear(D, 1)\n        optimizer = torch.optim.SGD(layer.parameters(), lr=lr)\n        loss_fn = nn.MSELoss()\n\n        for _ in range(steps):\n            optimizer.zero_grad()\n            pred = layer(X).squeeze(-1)  # (N,)\n            loss = loss_fn(pred, y)\n            loss.backward()\n            optimizer.step()\n\n        w = layer.weight.data.squeeze(0)  # (D,)\n        b = layer.bias.data.squeeze(0)    # scalar ()\n        return w, b",
+        "source": "class LinearRegression:\n    def closed_form(self, X: torch.Tensor, y: torch.Tensor):\n        n, d = X.shape\n        X_aug = torch.cat([X, torch.ones(n, 1, device=X.device, dtype=X.dtype)], dim=1)\n        theta = torch.linalg.lstsq(X_aug, y).solution\n        return theta[:d].detach(), theta[d].detach()\n\n    def gradient_descent(self, X: torch.Tensor, y: torch.Tensor, lr=0.01, steps=1000):\n        n, d = X.shape\n        w = torch.zeros(d, device=X.device, dtype=X.dtype)\n        b = torch.zeros((), device=X.device, dtype=X.dtype)\n        for _ in range(steps):\n            err = X @ w + b - y\n            w = w - lr * (2.0 / n) * (X.T @ err)\n            b = b - lr * (2.0 / n) * err.sum()\n        return w, b\n\n    def nn_linear(self, X: torch.Tensor, y: torch.Tensor, lr=0.01, steps=1000):\n        layer = nn.Linear(X.shape[1], 1, device=X.device, dtype=X.dtype)\n        optimizer = torch.optim.SGD(layer.parameters(), lr=lr)\n        for _ in range(steps):\n            optimizer.zero_grad()\n            loss = F.mse_loss(layer(X).squeeze(-1), y)\n            loss.backward()\n            optimizer.step()\n        return layer.weight.detach().squeeze(0).clone(), layer.bias.detach().squeeze(0).clone()",
         "role": "solution"
       },
       {
@@ -857,7 +857,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef reverse_kl_loss(student_logits, teacher_logits, temperature=1.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    kl = (p * (log_p - log_t)).sum(dim=-1).mean()\n    return kl * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef reverse_kl_loss(student_logits, teacher_logits, temperature=1.0):\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)\n    kl = (student_probs * (log_student - log_teacher)).sum(dim=-1).mean()\n    return kl * temperature ** 2",
         "role": "solution"
       },
       {
@@ -871,7 +871,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def reward_model_loss(chosen_hidden, rejected_hidden, reward_head):\n    r_chosen = (chosen_hidden @ reward_head).squeeze(-1)     # (B,)\n    r_rejected = (rejected_hidden @ reward_head).squeeze(-1) # (B,)\n    margin = r_chosen - r_rejected\n    # manual log-sigmoid: log(1/(1+exp(-x))) = -log(1+exp(-x))\n    loss = -torch.log(1.0 / (1.0 + torch.exp(-margin))).mean()\n    return loss",
+        "source": "def reward_model_loss(chosen_hidden, rejected_hidden, reward_head):\n    chosen = (chosen_hidden @ reward_head).squeeze(-1)\n    rejected = (rejected_hidden @ reward_head).squeeze(-1)\n    margin = chosen - rejected\n    # -log(sigmoid(margin)) = log(1 + exp(-margin)), evaluated stably.\n    return torch.logaddexp(torch.zeros_like(margin), -margin).mean()",
         "role": "solution"
       },
       {
@@ -913,7 +913,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def sft_loss(logits, labels, ignore_index=-100):\n    vocab_size = logits.shape[-1]\n    return F.cross_entropy(\n        logits.reshape(-1, vocab_size),\n        labels.reshape(-1),\n        ignore_index=ignore_index,\n    )",
+        "source": "def sft_loss(logits, labels, ignore_index=-100):\n    v = logits.shape[-1]\n    flat_logits, flat_labels = logits.reshape(-1, v), labels.reshape(-1)\n    if not (flat_labels != ignore_index).any():\n        return flat_logits.sum() * 0.0\n    return F.cross_entropy(flat_logits, flat_labels, ignore_index=ignore_index)",
         "role": "solution"
       },
       {
@@ -997,7 +997,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import json\nimport re\n\n\ndef parse_tool_calls(text):\n    calls = []\n    for body in re.findall(r\"<tool_call>\\n(.*?)</tool_call>\", text, re.DOTALL):\n        try:\n            obj = json.loads(body)\n        except (json.JSONDecodeError, ValueError):\n            continue\n        if not isinstance(obj, dict):\n            continue\n        name = obj.get(\"name\")\n        arguments = obj.get(\"arguments\", {})\n        if not isinstance(name, str) or not isinstance(arguments, dict):\n            continue\n        calls.append({\"name\": name, \"arguments\": arguments})\n    return calls",
+        "source": "import json\n\ndef parse_tool_calls(text):\n    calls = []\n    # Parse tag-delimited JSON; no newline requirement inside the opening tag.\n    for chunk in text.split(\"<tool_call>\")[1:]:\n        if \"</tool_call>\" not in chunk:\n            continue\n        body = chunk.split(\"</tool_call>\", 1)[0].strip()\n        try:\n            obj = json.loads(body)\n        except (json.JSONDecodeError, ValueError):\n            continue\n        if not isinstance(obj, dict):\n            continue\n        name = obj.get(\"name\")\n        arguments = obj.get(\"arguments\", {})\n        if not isinstance(name, str) or not isinstance(arguments, dict):\n            continue\n        calls.append({\"name\": name, \"arguments\": arguments})\n    return calls",
         "role": "solution"
       },
       {
@@ -1011,7 +1011,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0):\n    b, v = teacher_logits.shape\n    k = min(int(k), v)\n    vals, idx = teacher_logits.topk(k, dim=-1)\n    s_top = student_logits.gather(-1, idx)\n    log_p = F.log_softmax(s_top / temperature, dim=-1)\n    q = F.softmax(vals / temperature, dim=-1)\n    kl = F.kl_div(log_p, q, reduction=\"batchmean\")\n    return kl * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef topk_kd_loss(student_logits, teacher_logits, k, temperature=1.0):\n    if k < 1 or k > teacher_logits.shape[-1]:\n        raise ValueError(\"k must satisfy 1 <= k <= vocabulary size\")\n    if temperature <= 0:\n        raise ValueError(\"temperature must be positive\")\n    # Teacher selects support, but is a fixed distribution for distillation.\n    values, indices = teacher_logits.detach().topk(k, dim=-1)\n    student_topk = student_logits.gather(-1, indices)\n    log_student = F.log_softmax(student_topk / temperature, dim=-1)\n    teacher_probs = F.softmax(values / temperature, dim=-1)\n    return F.kl_div(log_student, teacher_probs, reduction=\"batchmean\") * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1025,7 +1025,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def sample_top_k_top_p(logits, top_k=0, top_p=1.0, temperature=1.0):\n    logits = logits / max(temperature, 1e-8)\n    if top_k > 0:\n        top_k_val = logits.topk(top_k).values[-1]\n        logits[logits < top_k_val] = float('-inf')\n    if top_p < 1.0:\n        sorted_logits, sorted_idx = torch.sort(logits, descending=True)\n        probs = torch.softmax(sorted_logits, dim=-1)\n        cumsum = torch.cumsum(probs, dim=-1)\n        mask = (cumsum - probs) > top_p\n        sorted_logits[mask] = float('-inf')\n        logits = torch.empty_like(logits).scatter_(0, sorted_idx, sorted_logits)\n    probs = torch.softmax(logits, dim=-1)\n    return torch.multinomial(probs, 1).item()",
+        "source": "def sample_top_k_top_p(logits, top_k=0, top_p=1.0, temperature=1.0):\n    if logits.ndim != 1 or logits.numel() == 0:\n        raise ValueError(\"logits must be a nonempty 1-D tensor\")\n    if temperature <= 0 or not 0 < top_p <= 1:\n        raise ValueError(\"temperature must be positive and top_p in (0, 1]\")\n    if top_k < 0 or top_k > logits.numel():\n        raise ValueError(\"top_k must be between 0 and vocabulary size\")\n    # Work on a new tensor: callers may reuse logits for scoring or gradients.\n    scores = logits / temperature\n    if top_k:\n        values, indices = scores.topk(top_k)\n        scores = torch.full_like(scores, float(\"-inf\")).scatter(0, indices, values)\n    if top_p < 1.0:\n        sorted_logits, sorted_indices = torch.sort(scores, descending=True)\n        probs = torch.softmax(sorted_logits, dim=-1)\n        cumulative = probs.cumsum(dim=-1)\n        remove = (cumulative - probs) >= top_p\n        remove[0] = False\n        sorted_logits = sorted_logits.masked_fill(remove, float(\"-inf\"))\n        scores = torch.empty_like(scores).scatter(0, sorted_indices, sorted_logits)\n    return int(torch.multinomial(torch.softmax(scores, dim=-1), 1).item())",
         "role": "solution"
       },
       {
@@ -1053,7 +1053,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0):\n    if not action_spans:\n        return torch.zeros((), dtype=student_logits.dtype)\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    span_losses = [per_tok[start:end].mean() for start, end in action_spans]\n    return torch.stack(span_losses).mean() * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef action_level_distillation_loss(student_logits, teacher_logits, action_spans, temperature=1.0):\n    if not action_spans:\n        return student_logits.sum() * 0.0\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)\n    per_token = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n    span_means = [per_token[start:end].mean() for start, end in action_spans]\n    return torch.stack(span_means).mean() * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1333,7 +1333,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    if generated_mask.sum() == 0:\n        return torch.zeros((), dtype=student_logits.dtype)\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    total = torch.zeros((), dtype=student_logits.dtype)\n    for m in range(teacher_logits_stack.shape[0]):\n        log_t = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)\n        per_tok = (p * (log_p - log_t)).sum(dim=-1)\n        kl_m = per_tok[generated_mask].mean()\n        total = total + teacher_weights[m] * kl_m\n    return total * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef multi_teacher_opd_loss(student_logits, teacher_logits_stack, teacher_weights, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return student_logits.sum() * 0.0\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    total = student_logits.sum() * 0.0\n    for m in range(teacher_logits_stack.shape[0]):\n        log_teacher = F.log_softmax(teacher_logits_stack[m].detach() / temperature, dim=-1)\n        per_token = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n        total = total + teacher_weights[m].detach() * per_token[generated_mask].mean()\n    return total * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1361,7 +1361,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0):\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    log_t = F.log_softmax(teacher_logits / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    sel = per_tok[generated_mask]\n    if sel.numel() == 0:\n        return torch.zeros((), dtype=per_tok.dtype)\n    return sel.mean() * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef on_policy_distillation_loss(student_logits, teacher_logits, generated_mask, temperature=1.0):\n    # On-policy selects training contexts; reverse KL is the chosen divergence.\n    if not generated_mask.any():\n        return student_logits.sum() * 0.0\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_logits.detach() / temperature, dim=-1)\n    per_token_kl = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n    return per_token_kl[generated_mask].mean() * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1375,7 +1375,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "import torch\nimport torch.nn.functional as F\n\n\ndef opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return torch.zeros((), dtype=student_logits.dtype)\n    B, T, _ = student_logits.shape\n    log_p = F.log_softmax(student_logits / temperature, dim=-1)\n    p = log_p.exp()\n    idx = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]\n    rows = torch.arange(B, device=student_logits.device)[:, None]\n    priv = privileged_logits.detach()[rows, idx]\n    log_t = F.log_softmax(priv / temperature, dim=-1)\n    per_tok = (p * (log_p - log_t)).sum(dim=-1)\n    return per_tok[generated_mask].mean() * (temperature ** 2)",
+        "source": "import torch\nimport torch.nn.functional as F\n\ndef opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):\n    if not generated_mask.any():\n        return student_logits.sum() * 0.0\n    B, T, _ = student_logits.shape\n    indices = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]\n    rows = torch.arange(B, device=student_logits.device)[:, None]\n    teacher_aligned = privileged_logits.detach()[rows, indices]\n    log_student = F.log_softmax(student_logits / temperature, dim=-1)\n    student_probs = log_student.exp()\n    log_teacher = F.log_softmax(teacher_aligned / temperature, dim=-1)\n    per_token_kl = (student_probs * (log_student - log_teacher)).sum(dim=-1)\n    return per_token_kl[generated_mask].mean() * temperature ** 2",
         "role": "solution"
       },
       {
@@ -1521,6 +1521,25 @@
       {
         "type": "code",
         "source": "import torch\npositions = torch.arange(0, 1024, 16)\ncos, sin = yarn_rope_cache(positions, 32, original_max_position=4096, scale_factor=8.0)\nprint('cos shape:', tuple(cos.shape))\nprint('position 1000, dims 0/4/12:', cos[62, 0].item(), cos[62, 8].item(), cos[62, 24].item())",
+        "role": "demo"
+      }
+    ]
+  },
+  "kl_estimators_k1_k2_k3": {
+    "cells": [
+      {
+        "type": "code",
+        "source": "import torch\n\ndef kl_estimators_k1_k2_k3(policy_logps, ref_logps, mask=None):\n    # Samples are assumed drawn from policy, estimating KL(policy || ref).\n    d = policy_logps - ref_logps.detach()\n    k1 = d\n    k2 = 0.5 * d.square()\n    k3 = torch.expm1(-d) + d\n    if mask is None:\n        return k1.mean(), k2.mean(), k3.mean()\n    valid = mask.to(device=d.device, dtype=d.dtype).detach()\n    denom = valid.sum().clamp_min(1)\n    return ((k1 * valid).sum() / denom,\n            (k2 * valid).sum() / denom,\n            (k3 * valid).sum() / denom)",
+        "role": "solution"
+      },
+      {
+        "type": "markdown",
+        "source": "The data are assumed sampled from policy π. For d = logπ - logπ_ref, k1=d, k2=d²/2, k3=expm1(-d)+d. k1 and k3 are unbiased KL(π||ref) estimators under on-policy sampling; k2 is a second-order approximation. This exercise estimates KL values; autodiff through a tokenwise estimator alone is not always the gradient of the full KL objective.",
+        "role": "explanation"
+      },
+      {
+        "type": "code",
+        "source": "import torch\np = torch.tensor([-0.2, -0.4, -0.8])\nr = torch.tensor([-0.3, -0.5, -0.6])\nprint('k1, k2, k3:', kl_estimators_k1_k2_k3(p, r))",
         "role": "demo"
       }
     ]

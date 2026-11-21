@@ -1,11 +1,11 @@
 """Clipped GRPO loss task."""
 
 TASK = {
-    "title": "GRPO Clipped Surrogate Loss",
-    "title_zh": "GRPO 裁剪代理损失",
+    "title": "GRPO Clipped Sequence-Level Surrogate",
+    "title_zh": "GRPO 裁剪代理目标（序列级简化）",
     "difficulty": "Hard",
-    "description_en": "Implement a PPO-style clipped surrogate for GRPO.\n\nThe simpler GRPO task in this site teaches group-relative reward normalization with a policy-gradient style loss. This advanced version keeps that group-relative advantage computation, then adds the old-policy importance ratio and clipping used in practical GRPO-style objectives.\n\n**Signature:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `new_logps` — current policy log-probabilities, shape (B,)\n- `old_logps` — old policy log-probabilities, shape (B,), treated as constant\n- `rewards` — scalar rewards, shape (B,)\n- `group_ids` — integer prompt/group identifiers, shape (B,)\n- `clip_ratio` — clipping range epsilon\n- `eps` — epsilon for reward-standard-deviation stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group normalized advantage: `A_i = (reward_i - mean_group) / (std_group + eps)`\n- Importance ratio: `ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- Loss: `-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- Gradients flow only through `new_logps`",
-    "description_zh": "实现带 PPO-style ratio clipping 的 GRPO 裁剪代理损失。\n\n本站较简化的 GRPO 题用于练习组内奖励归一化和 policy-gradient 风格损失。本进阶版保留组相对优势计算，再加入旧策略重要性采样比率和裁剪，这更接近实际 GRPO 类目标。\n\n**签名:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**参数:**\n- `new_logps` — 当前策略对数概率，形状 (B,)\n- `old_logps` — 旧策略对数概率，形状 (B,)，视为常量\n- `rewards` — 标量奖励，形状 (B,)\n- `group_ids` — 整数提示/组标识，形状 (B,)\n- `clip_ratio` — 裁剪范围 epsilon\n- `eps` — 奖励标准差的数值稳定项\n\n**返回:** 标量损失\n\n**约束:**\n- 组内归一化优势：`A_i = (reward_i - mean_group) / (std_group + eps)`\n- 重要性采样比率：`ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- 损失：`-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- 梯度仅通过 `new_logps` 流动",
+    "description_en": "Implement a PPO-style clipped surrogate for GRPO.\n\nThe simpler GRPO task in this site teaches group-relative reward normalization with a policy-gradient style loss. This advanced version adds old-policy importance ratios and PPO-style clipping, but uses one log-probability per whole response. It is a simplified sequence-level objective, not a complete token-level GRPO implementation with response masking, length reduction, reference KL and training-system details.\n\n**Signature:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**Parameters:**\n- `new_logps` — current policy log-probabilities, shape (B,)\n- `old_logps` — old policy log-probabilities, shape (B,), treated as constant\n- `rewards` — scalar rewards, shape (B,)\n- `group_ids` — integer prompt/group identifiers, shape (B,)\n- `clip_ratio` — clipping range epsilon\n- `eps` — epsilon for reward-standard-deviation stability\n\n**Returns:** scalar loss\n\n**Constraints:**\n- Per-group normalized advantage: `A_i = (reward_i - mean_group) / (std_group + eps)`\n- Importance ratio: `ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- Loss: `-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- Gradients flow only through `new_logps`",
+    "description_zh": "实现带 PPO-style ratio clipping 的 GRPO 裁剪代理损失。\n\n本站较简化的 GRPO 题用于练习组内奖励归一化和 policy-gradient 风格损失。本进阶版保留组相对优势计算，加入旧策略重要性采样比率和裁剪，但每条回复只有一个 log-prob。它是序列级简化目标，不包括实际训练的逐 token Mask、长度归一化、Reference KL 等细节。\n\n**签名:** `grpo_clipped_loss(new_logps, old_logps, rewards, group_ids, clip_ratio=0.2, eps=1e-5) -> Tensor`\n\n**参数:**\n- `new_logps` — 当前策略对数概率，形状 (B,)\n- `old_logps` — 旧策略对数概率，形状 (B,)，视为常量\n- `rewards` — 标量奖励，形状 (B,)\n- `group_ids` — 整数提示/组标识，形状 (B,)\n- `clip_ratio` — 裁剪范围 epsilon\n- `eps` — 奖励标准差的数值稳定项\n\n**返回:** 标量损失\n\n**约束:**\n- 组内归一化优势：`A_i = (reward_i - mean_group) / (std_group + eps)`\n- 重要性采样比率：`ratio_i = exp(new_logps_i - old_logps_i.detach())`\n- 损失：`-mean(min(ratio_i * A_i, clamp(ratio_i, 1-clip_ratio, 1+clip_ratio) * A_i))`\n- 梯度仅通过 `new_logps` 流动",
     "function_name": "grpo_clipped_loss",
     "hint": (
         "1. compute group-normalized rewards as detached advantages\n"
@@ -81,6 +81,23 @@ TASK = {
             "assert new_logps.grad is not None, 'Gradients should flow through new_logps'\n"
             "assert old_logps.grad is None, 'Gradients should not flow through old_logps'\n"
             "assert rewards.grad is None, 'Gradients should not flow through rewards'\n"
+        },
+        {
+            "name": "GRPO clipping gradients depend on advantage sign",
+            "code": """
+import torch
+old = torch.zeros(4)
+ratios = torch.tensor([1.5, 0.6, 0.6, 1.5])
+new = ratios.log().detach().requires_grad_(True)
+rewards = torch.tensor([1.0, 0.0, 0.0, 1.0])
+groups = torch.tensor([0, 0, 1, 1])
+# Group 0 advantages: +1,-1; group 1: -1,+1
+{fn}(new, old, rewards, groups, clip_ratio=0.2).backward()
+assert abs(new.grad[0].item()) < 1e-7
+assert abs(new.grad[1].item()) < 1e-7
+assert abs(new.grad[2].item()) < 1e-7
+assert abs(new.grad[3].item()) < 1e-7
+""",
         },
     ],
     "solution": '''def grpo_clipped_loss(new_logps: Tensor, old_logps: Tensor, rewards: Tensor,

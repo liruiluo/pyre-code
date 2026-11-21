@@ -21,7 +21,28 @@ TASK = {
         {
             "name": "zero_grad works",
             "code": "\nimport torch\nw = torch.randn(4, requires_grad=True)\nopt = {fn}([w], lr=0.01)\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0, 'zero_grad should zero all gradients'\n"
-        }
+        },
+        {
+            "name": "Per-parameter step counts when gradients are missing",
+            "code": """
+import torch
+w1 = torch.tensor([1.0], requires_grad=True)
+w2 = torch.tensor([-1.0], requires_grad=True)
+r1 = w1.detach().clone().requires_grad_(True)
+r2 = w2.detach().clone().requires_grad_(True)
+opt = {fn}([w1, w2], lr=0.01)
+ref = torch.optim.Adam([r1, r2], lr=0.01)
+for i in range(5):
+    w1.grad = torch.tensor([0.5])
+    r1.grad = torch.tensor([0.5])
+    w2.grad = torch.tensor([0.3]) if i in (0, 2, 4) else None
+    r2.grad = torch.tensor([0.3]) if i in (0, 2, 4) else None
+    opt.step()
+    ref.step()
+assert torch.allclose(w1, r1, atol=1e-6)
+assert torch.allclose(w2, r2, atol=1e-6)
+""",
+        },
     ],
     "solution": '''class MyAdam:
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):
@@ -29,20 +50,21 @@ TASK = {
         self.lr = lr
         self.beta1, self.beta2 = betas
         self.eps = eps
-        self.t = 0
+        self.t = [0 for _ in self.params]
         self.m = [torch.zeros_like(p) for p in self.params]
         self.v = [torch.zeros_like(p) for p in self.params]
 
     def step(self):
-        self.t += 1
         with torch.no_grad():
             for i, p in enumerate(self.params):
                 if p.grad is None:
                     continue
-                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * p.grad
-                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * p.grad ** 2
-                m_hat = self.m[i] / (1 - self.beta1 ** self.t)
-                v_hat = self.v[i] / (1 - self.beta2 ** self.t)
+                self.t[i] += 1
+                grad = p.grad
+                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * grad
+                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * grad.square()
+                m_hat = self.m[i] / (1 - self.beta1 ** self.t[i])
+                v_hat = self.v[i] / (1 - self.beta2 ** self.t[i])
                 p -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)
 
     def zero_grad(self):

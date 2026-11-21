@@ -138,23 +138,36 @@ expected = per_tok[mask].mean() * temp ** 2
 assert torch.allclose(out, expected, atol=1e-6), 'offsets=0 must equal the plain on-policy loss'
 """,
         },
+        {
+            "name": "Empty mask keeps dtype device and gradient connection",
+            "code": """
+import torch
+student = torch.randn(2, 3, 5, requires_grad=True)
+privileged = torch.randn(2, 8, 5, requires_grad=True)
+mask = torch.zeros(2, 3, dtype=torch.bool)
+out = {fn}(student, privileged, torch.tensor([1, 2]), mask)
+assert out.item() == 0.0 and out.device == student.device and out.dtype == student.dtype
+out.backward()
+assert student.grad is not None and torch.all(student.grad == 0)
+assert privileged.grad is None
+""",
+        },
     ],
     "solution": '''import torch
 import torch.nn.functional as F
 
-
 def opsd_loss(student_logits, privileged_logits, rollout_offsets, generated_mask, temperature=1.0):
     if not generated_mask.any():
-        return torch.zeros((), dtype=student_logits.dtype)
+        return student_logits.sum() * 0.0
     B, T, _ = student_logits.shape
-    log_p = F.log_softmax(student_logits / temperature, dim=-1)
-    p = log_p.exp()
-    idx = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]
+    indices = rollout_offsets[:, None] + torch.arange(T, device=student_logits.device)[None, :]
     rows = torch.arange(B, device=student_logits.device)[:, None]
-    priv = privileged_logits.detach()[rows, idx]
-    log_t = F.log_softmax(priv / temperature, dim=-1)
-    per_tok = (p * (log_p - log_t)).sum(dim=-1)
-    return per_tok[generated_mask].mean() * (temperature ** 2)''',
+    teacher_aligned = privileged_logits.detach()[rows, indices]
+    log_student = F.log_softmax(student_logits / temperature, dim=-1)
+    student_probs = log_student.exp()
+    log_teacher = F.log_softmax(teacher_aligned / temperature, dim=-1)
+    per_token_kl = (student_probs * (log_student - log_teacher)).sum(dim=-1)
+    return per_token_kl[generated_mask].mean() * temperature ** 2''',
     "demo": """import torch
 torch.manual_seed(0)
 B, T, V = 2, 6, 10

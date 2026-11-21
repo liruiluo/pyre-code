@@ -25,15 +25,31 @@ TASK = {
         {
             "name": "Preserves direction",
             "code": "\nimport torch\ntorch.manual_seed(0)\np = torch.randn(100, requires_grad=True)\n(p * 10).sum().backward()\ndir_before = p.grad / p.grad.norm()\n{fn}([p], max_norm=1.0)\ndir_after = p.grad / p.grad.norm()\nassert torch.allclose(dir_before, dir_after, atol=1e-5), 'Should preserve direction'\n"
-        }
+        },
+        {
+            "name": "Missing gradients and max_norm=0",
+            "code": """
+import torch
+p = torch.tensor([2.0], requires_grad=True)
+assert {fn}([p], 1.0) == 0.0
+p.grad = torch.tensor([3.0])
+norm = {fn}([p], 0.0)
+assert abs(norm - 3.0) < 1e-6
+assert torch.equal(p.grad, torch.zeros_like(p.grad))
+""",
+        },
     ],
     "solution": '''def clip_grad_norm(parameters, max_norm):
-    parameters = [p for p in parameters if p.grad is not None]
-    total_norm = torch.sqrt(sum(p.grad.norm() ** 2 for p in parameters))
-    clip_coef = max_norm / (total_norm + 1e-6)
-    if clip_coef < 1:
-        for p in parameters:
-            p.grad.mul_(clip_coef)
+    if max_norm < 0:
+        raise ValueError("max_norm must be non-negative")
+    grads = [p.grad for p in parameters if p.grad is not None]
+    if not grads:
+        return 0.0
+    total_norm = torch.sqrt(sum(g.detach().pow(2).sum() for g in grads))
+    scale = max_norm / (total_norm + 1e-6)
+    if scale < 1:
+        for grad in grads:
+            grad.mul_(scale)
     return total_norm.item()''',
     "demo": """p = torch.randn(100, requires_grad=True)
 (p * 10).sum().backward()

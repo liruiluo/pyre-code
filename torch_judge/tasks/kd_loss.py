@@ -71,16 +71,25 @@ small = {fn}(t * 1.5 - s * 0.5, t, temperature=1.0)
 assert big > small, 'Loss should shrink as student moves toward the teacher'
 """,
         },
+        {
+            "name": "Teacher logits do not receive gradients",
+            "code": """
+import torch
+student = torch.randn(2, 5, requires_grad=True)
+teacher = torch.randn(2, 5, requires_grad=True)
+{fn}(student, teacher).backward()
+assert student.grad is not None and student.grad.abs().sum() > 0
+assert teacher.grad is None
+""",
+        },
     ],
     "solution": '''import torch
 import torch.nn.functional as F
 
-
 def kd_loss(student_logits, teacher_logits, temperature=2.0):
-    log_p = F.log_softmax(student_logits / temperature, dim=-1)
-    q = F.softmax(teacher_logits / temperature, dim=-1)
-    kl = F.kl_div(log_p, q, reduction="batchmean")
-    return kl * (temperature ** 2)''',
+    log_student = F.log_softmax(student_logits / temperature, dim=-1)
+    teacher_probs = F.softmax(teacher_logits.detach() / temperature, dim=-1)
+    return F.kl_div(log_student, teacher_probs, reduction="batchmean") * temperature ** 2''',
     "demo": """import torch
 torch.manual_seed(0)
 teacher = torch.randn(2, 8)
