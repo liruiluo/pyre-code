@@ -1,4 +1,4 @@
-"""Executable quality gate for the 49 selected ML/post-training interview exercises.
+"""Executable quality gate for the 48 selected ML/post-training interview exercises.
 
 Use: python -m pytest -q tests/test_interview_reference_solutions.py
 These tests only execute trusted repository reference solutions and test definitions.
@@ -30,10 +30,12 @@ INTERVIEW_PATH = next(path for path in ALL_PATHS if path["id"] == "post-training
 IDS = INTERVIEW_PATH["problems"]
 
 
-def test_interview_path_contains_49_unique_registered_code_tasks():
-    assert len(IDS) == len(set(IDS)) == 49
+def test_interview_path_contains_48_unique_registered_code_tasks():
+    assert len(IDS) == len(set(IDS)) == 48
     assert all(task_id in TASKS and TASKS[task_id].get("type") != "choice" for task_id in IDS)
     assert "kl_estimators_k1_k2_k3" in IDS
+    assert "coding_agent_harness" in IDS
+    assert "action_level_distillation" not in IDS and "agent_memory_bank" not in IDS
 
 
 def test_problem_catalog_matches_python_task_definitions():
