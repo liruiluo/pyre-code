@@ -128,6 +128,7 @@ def kl_estimators_k1_k2_k3(policy_logps, ref_logps, mask=None):
     return ((k1 * valid).sum() / denom,
             (k2 * valid).sum() / denom,
             (k3 * valid).sum() / denom)''',
+    "explanation": "The data are assumed sampled from policy π. For d = logπ - logπ_ref, k1=d, k2=d²/2, k3=expm1(-d)+d. k1 and k3 are unbiased KL(π||ref) estimators under on-policy sampling; k2 is a second-order approximation. This exercise estimates KL values; autodiff through a tokenwise estimator alone is not always the gradient of the full KL objective.",
     "demo": """import torch
 p = torch.tensor([-0.2, -0.4, -0.8])
 r = torch.tensor([-0.3, -0.5, -0.6])
