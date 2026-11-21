@@ -73,7 +73,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def accumulated_step(model, optimizer, loss_fn, micro_batches):\n    optimizer.zero_grad()\n    total_loss = 0.0\n    n = len(micro_batches)\n    for x, y in micro_batches:\n        loss = loss_fn(model(x), y) / n\n        loss.backward()\n        total_loss += loss.item()\n    optimizer.step()\n    return total_loss",
+        "source": "def accumulated_step(model, optimizer, loss_fn, micro_batches):\n    if not micro_batches:\n        raise ValueError(\"micro_batches must not be empty\")\n    total_samples = sum(x.shape[0] for x, _ in micro_batches)\n    if total_samples <= 0:\n        raise ValueError(\"micro_batches must contain samples\")\n    optimizer.zero_grad()\n    total_loss = 0.0\n    for x, y in micro_batches:\n        if x.shape[0] == 0:\n            continue\n        # For mean-reduced losses, weight by the number of examples.\n        weight = x.shape[0] / total_samples\n        loss = loss_fn(model(x), y) * weight\n        loss.backward()\n        total_loss += loss.item()\n    optimizer.step()\n    return total_loss",
         "role": "solution"
       },
       {
@@ -325,7 +325,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "class MyAdam:\n    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):\n        self.params = list(params)\n        self.lr = lr\n        self.beta1, self.beta2 = betas\n        self.eps = eps\n        self.t = 0\n        self.m = [torch.zeros_like(p) for p in self.params]\n        self.v = [torch.zeros_like(p) for p in self.params]\n\n    def step(self):\n        self.t += 1\n        with torch.no_grad():\n            for i, p in enumerate(self.params):\n                if p.grad is None:\n                    continue\n                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * p.grad\n                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * p.grad ** 2\n                m_hat = self.m[i] / (1 - self.beta1 ** self.t)\n                v_hat = self.v[i] / (1 - self.beta2 ** self.t)\n                p -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
+        "source": "class MyAdam:\n    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):\n        self.params = list(params)\n        self.lr = lr\n        self.beta1, self.beta2 = betas\n        self.eps = eps\n        self.t = [0 for _ in self.params]\n        self.m = [torch.zeros_like(p) for p in self.params]\n        self.v = [torch.zeros_like(p) for p in self.params]\n\n    def step(self):\n        with torch.no_grad():\n            for i, p in enumerate(self.params):\n                if p.grad is None:\n                    continue\n                self.t[i] += 1\n                grad = p.grad\n                self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * grad\n                self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * grad.square()\n                m_hat = self.m[i] / (1 - self.beta1 ** self.t[i])\n                v_hat = self.v[i] / (1 - self.beta2 ** self.t[i])\n                p -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)\n\n    def zero_grad(self):\n        for p in self.params:\n            if p.grad is not None:\n                p.grad.zero_()",
         "role": "solution"
       },
       {
@@ -619,7 +619,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1):\n    kl = policy_logps - ref_logps.detach()\n    if mask is None:\n        return beta * kl.mean()\n    mask = mask.to(dtype=kl.dtype).detach()\n    return beta * (kl * mask).sum() / mask.sum()",
+        "source": "def kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1):\n    # A sampled log-ratio can be negative; its policy expectation is KL.\n    log_ratio = policy_logps - ref_logps.detach()\n    if mask is None:\n        return beta * log_ratio.mean()\n    valid = mask.to(device=log_ratio.device, dtype=log_ratio.dtype).detach()\n    return beta * (log_ratio * valid).sum() / valid.sum().clamp_min(1)",
         "role": "solution"
       },
       {
@@ -1025,7 +1025,7 @@
     "cells": [
       {
         "type": "code",
-        "source": "def sample_top_k_top_p(logits, top_k=0, top_p=1.0, temperature=1.0):\n    logits = logits / max(temperature, 1e-8)\n    if top_k > 0:\n        top_k_val = logits.topk(top_k).values[-1]\n        logits[logits < top_k_val] = float('-inf')\n    if top_p < 1.0:\n        sorted_logits, sorted_idx = torch.sort(logits, descending=True)\n        probs = torch.softmax(sorted_logits, dim=-1)\n        cumsum = torch.cumsum(probs, dim=-1)\n        mask = (cumsum - probs) > top_p\n        sorted_logits[mask] = float('-inf')\n        logits = torch.empty_like(logits).scatter_(0, sorted_idx, sorted_logits)\n    probs = torch.softmax(logits, dim=-1)\n    return torch.multinomial(probs, 1).item()",
+        "source": "def sample_top_k_top_p(logits, top_k=0, top_p=1.0, temperature=1.0):\n    if logits.ndim != 1 or logits.numel() == 0:\n        raise ValueError(\"logits must be a nonempty 1-D tensor\")\n    if temperature <= 0 or not 0 < top_p <= 1:\n        raise ValueError(\"temperature must be positive and top_p in (0, 1]\")\n    if top_k < 0 or top_k > logits.numel():\n        raise ValueError(\"top_k must be between 0 and vocabulary size\")\n    # Work on a new tensor: callers may reuse logits for scoring or gradients.\n    scores = logits / temperature\n    if top_k:\n        values, indices = scores.topk(top_k)\n        scores = torch.full_like(scores, float(\"-inf\")).scatter(0, indices, values)\n    if top_p < 1.0:\n        sorted_logits, sorted_indices = torch.sort(scores, descending=True)\n        probs = torch.softmax(sorted_logits, dim=-1)\n        cumulative = probs.cumsum(dim=-1)\n        remove = (cumulative - probs) >= top_p\n        remove[0] = False\n        sorted_logits = sorted_logits.masked_fill(remove, float(\"-inf\"))\n        scores = torch.empty_like(scores).scatter(0, sorted_indices, sorted_logits)\n    return int(torch.multinomial(torch.softmax(scores, dim=-1), 1).item())",
         "role": "solution"
       },
       {

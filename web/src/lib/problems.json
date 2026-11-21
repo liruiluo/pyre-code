@@ -127,10 +127,10 @@
       "titleZh": "梯度累积",
       "difficulty": "Easy",
       "functionName": "accumulated_step",
-      "hint": "1. optimizer.zero_grad() once\n2. for each micro-batch: forward → loss/n → backward\n3. optimizer.step()\n   Dividing by n ensures accumulated grads match a single full-batch update.",
-      "hintZh": "1. optimizer.zero_grad() 一次\n2. 对每个微批次：前向 → loss/n → 反向\n3. optimizer.step()\n   除以 n 确保累积梯度与单次全批次更新一致。",
-      "descriptionEn": "Implement gradient accumulation over micro-batches.\n\nGradient accumulation simulates a large batch by accumulating gradients from multiple smaller batches before a single optimizer step.\n\n**Signature:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**Parameters:**\n- `model` — nn.Module\n- `optimizer` — torch optimizer\n- `loss_fn` — loss function\n- `micro_batches` — list of (x, y) tuples\n\n**Returns:** total loss as a float\n\n**Constraints:**\n- Scale each micro-batch loss by `1/n` before backward\n- Must match a single full-batch update numerically",
-      "descriptionZh": "实现微批次梯度累积。\n\n梯度累积通过在多个小批次上累积梯度后执行一次优化器步骤，模拟大批次训练。\n\n**签名:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**参数:**\n- `model` — nn.Module\n- `optimizer` — torch 优化器\n- `loss_fn` — 损失函数\n- `micro_batches` — (x, y) 元组列表\n\n**返回:** 总损失（浮点数）\n\n**约束:**\n- 每个微批次损失在反向传播前除以 `n`\n- 必须与单次全批次更新数值一致",
+      "hint": "1. optimizer.zero_grad() once\n2. for each micro-batch: forward → loss * (micro_batch_size / total_batch_size) → backward\n3. optimizer.step()\n   Dividing by n works only when micro-batches have equal sizes and loss uses mean reduction.",
+      "hintZh": "1. optimizer.zero_grad() 一次\n2. 对每个微批次：前向 → loss * (micro_batch_size / total_batch_size) → 反向\n3. optimizer.step()\n   仅当微批次等大小且 loss 使用 mean reduction 时才能直接除以 n。",
+      "descriptionEn": "Implement gradient accumulation over micro-batches.\n\nGradient accumulation simulates a large batch by accumulating gradients from multiple smaller batches before a single optimizer step.\n\n**Signature:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**Parameters:**\n- `model` — nn.Module\n- `optimizer` — torch optimizer\n- `loss_fn` — loss function\n- `micro_batches` — list of (x, y) tuples\n\n**Returns:** total loss as a float\n\n**Constraints:**\n- For mean-reduced per-example losses, scale each micro-batch by `micro_batch_size / total_batch_size` before backward (equal-sized batches simplify to `1/n`)\n- Must match a single full-batch update numerically",
+      "descriptionZh": "实现微批次梯度累积。\n\n梯度累积通过在多个小批次上累积梯度后执行一次优化器步骤，模拟大批次训练。\n\n**签名:** `accumulated_step(model, optimizer, loss_fn, micro_batches) -> float`\n\n**参数:**\n- `model` — nn.Module\n- `optimizer` — torch 优化器\n- `loss_fn` — 损失函数\n- `micro_batches` — (x, y) 元组列表\n\n**返回:** 总损失（浮点数）\n\n**约束:**\n- 采用按样本取 mean 的 loss 时，按 `micro_batch_size / total_batch_size` 缩放各微批次（仅等大小批次可简化为 `1/n`）\n- 必须与单次全批次更新数值一致",
       "tests": [
         {
           "name": "Matches full batch update",
@@ -143,6 +143,14 @@
         {
           "name": "Parameters actually update",
           "code": "\nimport torch, torch.nn as nn\nmodel = nn.Linear(4, 2)\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\nw_before = model.weight.data.clone()\n{fn}(model, opt, nn.MSELoss(), [(torch.randn(2, 4), torch.randn(2, 2))])\nassert not torch.equal(model.weight.data, w_before), 'Should change'\n"
+        },
+        {
+          "name": "Unequal micro-batches match a single full-batch update",
+          "code": "\nimport torch\nimport torch.nn as nn\ntorch.manual_seed(12)\nmodel = nn.Linear(4, 2, bias=False)\nref = nn.Linear(4, 2, bias=False)\nref.load_state_dict(model.state_dict())\nx1, y1 = torch.randn(1, 4), torch.randn(1, 2)\nx2, y2 = torch.randn(5, 4), torch.randn(5, 2)\nloss_fn = nn.MSELoss()\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\nopt_ref = torch.optim.SGD(ref.parameters(), lr=0.1)\nloss = {fn}(model, opt, loss_fn, [(x1, y1), (x2, y2)])\nopt_ref.zero_grad()\nexpected_loss = loss_fn(ref(torch.cat([x1, x2])), torch.cat([y1, y2]))\nexpected_loss.backward()\nopt_ref.step()\nassert torch.allclose(model.weight, ref.weight, atol=1e-6)\nassert abs(loss - expected_loss.item()) < 1e-6\n"
+        },
+        {
+          "name": "Empty micro-batch list is rejected",
+          "code": "\nimport torch\nimport torch.nn as nn\nmodel = nn.Linear(2, 1)\nopt = torch.optim.SGD(model.parameters(), lr=0.1)\ntry:\n    {fn}(model, opt, nn.MSELoss(), [])\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError(\"Empty accumulation should raise ValueError\")\n"
         }
       ]
     },
@@ -293,6 +301,10 @@
         {
           "name": "zero_grad works",
           "code": "\nimport torch\nw = torch.randn(4, requires_grad=True)\nopt = {fn}([w], lr=0.01)\n(w ** 2).sum().backward()\nassert w.grad.abs().sum() > 0\nopt.zero_grad()\nassert w.grad.abs().sum() == 0, 'zero_grad should zero all gradients'\n"
+        },
+        {
+          "name": "Per-parameter step counts when gradients are missing",
+          "code": "\nimport torch\nw1 = torch.tensor([1.0], requires_grad=True)\nw2 = torch.tensor([-1.0], requires_grad=True)\nr1 = w1.detach().clone().requires_grad_(True)\nr2 = w2.detach().clone().requires_grad_(True)\nopt = {fn}([w1, w2], lr=0.01)\nref = torch.optim.Adam([r1, r2], lr=0.01)\nfor i in range(5):\n    w1.grad = torch.tensor([0.5])\n    r1.grad = torch.tensor([0.5])\n    w2.grad = torch.tensor([0.3]) if i in (0, 2, 4) else None\n    r2.grad = torch.tensor([0.3]) if i in (0, 2, 4) else None\n    opt.step()\n    ref.step()\nassert torch.allclose(w1, r1, atol=1e-6)\nassert torch.allclose(w2, r2, atol=1e-6)\n"
         }
       ]
     },
@@ -655,6 +667,18 @@
         {
           "name": "top_p excludes low-probability tokens",
           "code": "\nimport torch\n# Token 0 has prob ~1.0 after softmax; top_p=0.5 should only allow token 0\nlogits = torch.zeros(10)\nlogits[0] = 10.0\ntorch.manual_seed(0)\nresults = set()\nfor _ in range(50):\n    results.add({fn}(logits.clone(), top_k=0, top_p=0.5, temperature=1.0))\nexpected = {0}\nassert results == expected, f'With top_p=0.5 and dominant token 0, only token 0 should be sampled, got ' + str(results)\n"
+        },
+        {
+          "name": "Does not modify the caller's logits",
+          "code": "\nimport torch\nlogits = torch.tensor([0.5, 1.0, -1.0, 2.0])\noriginal = logits.clone()\nfor _ in range(5):\n    {fn}(logits, top_k=2, top_p=0.8)\nassert torch.equal(logits, original)\n"
+        },
+        {
+          "name": "Top-k ties keep at most k candidates",
+          "code": "\nimport torch\nlogits = torch.tensor([2.0, 2.0, 2.0, 0.0])\ntorch.manual_seed(3)\nsamples = { {fn}(logits, top_k=1) for _ in range(40) }\nassert len(samples) == 1, f\"top_k=1 should choose one tied index, saw {samples}\"\n"
+        },
+        {
+          "name": "Invalid sampling options fail clearly",
+          "code": "\nimport torch\nfor kwargs in ({\"temperature\": 0}, {\"top_p\": 0}, {\"top_p\": 1.1}, {\"top_k\": -1}, {\"top_k\": 8}):\n    try:\n        {fn}(torch.randn(3), **kwargs)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(f\"Must reject {kwargs}\")\n"
         }
       ]
     },
@@ -2119,10 +2143,10 @@
       "titleZh": "RLHF KL 惩罚",
       "difficulty": "Medium",
       "functionName": "kl_penalty",
-      "hint": "1. `kl = policy_logps - ref_logps.detach()`\n2. If `mask` is provided: `penalty = (kl * mask).sum() / mask.sum()`\n3. Return `beta * penalty`",
-      "hintZh": "1. `kl = policy_logps - ref_logps.detach()`\n2. 若提供 mask：`penalty = (kl * mask).sum() / mask.sum()`\n3. 返回 `beta * penalty`",
-      "descriptionEn": "Implement the sampled-token KL penalty commonly used in RLHF/PPO training.\n\nFor generated tokens, a simple per-token KL estimate is `policy_logp - reference_logp`; PPO-style RLHF adds `beta * KL` to discourage the policy from drifting too far from the reference model.\n\n**Signature:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_logps`, `ref_logps` — sampled-token log-probs with the same shape\n- `mask` — optional 0/1 mask for valid response tokens\n- `beta` — KL coefficient\n\n**Returns:** scalar penalty over valid tokens\n\n**Constraints:**\n- If `mask` is provided, average only over masked positions\n- `ref_logps` and `mask` should not receive gradients",
-      "descriptionZh": "实现 RLHF/PPO 训练中常见的采样 token KL 惩罚。\n\n对生成 token，一个简单的逐 token KL 估计是 `policy_logp - reference_logp`；PPO 风格 RLHF 加上 `beta * KL` 来限制策略偏离参考模型。\n\n**签名:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_logps`, `ref_logps` — 形状相同的采样 token 对数概率\n- `mask` — 可选 0/1 有效回复 token mask\n- `beta` — KL 系数\n\n**返回:** 有效 token 上的标量惩罚\n\n**约束:**\n- 若提供 `mask`，只在 mask 位置求平均\n- `ref_logps` 和 `mask` 不应接收梯度",
+      "hint": "1. `kl = policy_logps - ref_logps.detach()`\n2. If `mask` is provided: `penalty = (kl * mask).sum() / mask.sum().clamp_min(1)`\n3. Return `beta * penalty`",
+      "hintZh": "1. `kl = policy_logps - ref_logps.detach()`\n2. 若提供 mask：`penalty = (kl * mask).sum() / mask.sum().clamp_min(1)`\n3. 返回 `beta * penalty`",
+      "descriptionEn": "Implement the sampled-token KL penalty commonly used in RLHF/PPO training.\n\nFor generated tokens, a simple per-token KL estimate is `policy_logp - reference_logp`; PPO-style RLHF adds a sampled log-ratio as a KL estimator to discourage drift. Individual samples or finite minibatch means can be negative; only the expectation under the policy equals the nonnegative `KL(policy || reference)`.\n\n**Signature:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**Parameters:**\n- `policy_logps`, `ref_logps` — sampled-token log-probs with the same shape\n- `mask` — optional 0/1 mask for valid response tokens\n- `beta` — KL coefficient\n\n**Returns:** scalar penalty over valid tokens\n\n**Constraints:**\n- If `mask` is provided, average only over masked positions\n- `ref_logps` and `mask` should not receive gradients",
+      "descriptionZh": "实现 RLHF/PPO 训练中常见的采样 token KL 惩罚。\n\n对生成 token，一个简单的逐 token KL 估计是 `policy_logp - reference_logp`；PPO 风格 RLHF 用采样 log-ratio 估计 KL 以限制策略偏离参考模型。单个采样值或有限批次均值可以为负；在当前策略分布下求期望才等于非负的 `KL(policy || reference)`。\n\n**签名:** `kl_penalty(policy_logps, ref_logps, mask=None, beta=0.1) -> Tensor`\n\n**参数:**\n- `policy_logps`, `ref_logps` — 形状相同的采样 token 对数概率\n- `mask` — 可选 0/1 有效回复 token mask\n- `beta` — KL 系数\n\n**返回:** 有效 token 上的标量惩罚\n\n**约束:**\n- 若提供 `mask`，只在 mask 位置求平均\n- `ref_logps` 和 `mask` 不应接收梯度",
       "tests": [
         {
           "name": "Unmasked mean penalty",
@@ -2139,6 +2163,10 @@
         {
           "name": "Zero when policy equals reference",
           "code": "\nimport torch\nlogps = torch.randn(3, 5)\nout = {fn}(logps, logps, mask=torch.ones_like(logps), beta=0.3)\nassert torch.allclose(out, torch.tensor(0.0), atol=1e-6)\n"
+        },
+        {
+          "name": "All-zero mask gives connected zero loss",
+          "code": "\nimport torch\npolicy = torch.randn(2, 4, requires_grad=True)\nreference = torch.randn(2, 4, requires_grad=True)\nloss = {fn}(policy, reference, mask=torch.zeros(2, 4))\nassert loss.item() == 0.0 and torch.isfinite(loss)\nloss.backward()\nassert policy.grad is not None and torch.all(policy.grad == 0)\nassert reference.grad is None\n"
         }
       ]
     },

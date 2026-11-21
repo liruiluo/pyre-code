@@ -30,21 +30,62 @@ TASK = {
             "name": "top_p excludes low-probability tokens",
             "code": "\nimport torch\n# Token 0 has prob ~1.0 after softmax; top_p=0.5 should only allow token 0\nlogits = torch.zeros(10)\nlogits[0] = 10.0\ntorch.manual_seed(0)\nresults = set()\nfor _ in range(50):\n    results.add({fn}(logits.clone(), top_k=0, top_p=0.5, temperature=1.0))\nexpected = {0}\nassert results == expected, f'With top_p=0.5 and dominant token 0, only token 0 should be sampled, got ' + str(results)\n"
         }
+        {
+            "name": "Does not modify the caller's logits",
+            "code": """
+import torch
+logits = torch.tensor([0.5, 1.0, -1.0, 2.0])
+original = logits.clone()
+for _ in range(5):
+    {fn}(logits, top_k=2, top_p=0.8)
+assert torch.equal(logits, original)
+""",
+        },
+        {
+            "name": "Top-k ties keep at most k candidates",
+            "code": """
+import torch
+logits = torch.tensor([2.0, 2.0, 2.0, 0.0])
+torch.manual_seed(3)
+samples = { {fn}(logits, top_k=1) for _ in range(40) }
+assert len(samples) == 1, f"top_k=1 should choose one tied index, saw {samples}"
+""",
+        },
+        {
+            "name": "Invalid sampling options fail clearly",
+            "code": """
+import torch
+for kwargs in ({"temperature": 0}, {"top_p": 0}, {"top_p": 1.1}, {"top_k": -1}, {"top_k": 8}):
+    try:
+        {fn}(torch.randn(3), **kwargs)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"Must reject {kwargs}")
+""",
+        },
     ],
     "solution": '''def sample_top_k_top_p(logits, top_k=0, top_p=1.0, temperature=1.0):
-    logits = logits / max(temperature, 1e-8)
-    if top_k > 0:
-        top_k_val = logits.topk(top_k).values[-1]
-        logits[logits < top_k_val] = float('-inf')
+    if logits.ndim != 1 or logits.numel() == 0:
+        raise ValueError("logits must be a nonempty 1-D tensor")
+    if temperature <= 0 or not 0 < top_p <= 1:
+        raise ValueError("temperature must be positive and top_p in (0, 1]")
+    if top_k < 0 or top_k > logits.numel():
+        raise ValueError("top_k must be between 0 and vocabulary size")
+    # Work on a new tensor: callers may reuse logits for scoring or gradients.
+    scores = logits / temperature
+    if top_k:
+        values, indices = scores.topk(top_k)
+        scores = torch.full_like(scores, float("-inf")).scatter(0, indices, values)
     if top_p < 1.0:
-        sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+        sorted_logits, sorted_indices = torch.sort(scores, descending=True)
         probs = torch.softmax(sorted_logits, dim=-1)
-        cumsum = torch.cumsum(probs, dim=-1)
-        mask = (cumsum - probs) > top_p
-        sorted_logits[mask] = float('-inf')
-        logits = torch.empty_like(logits).scatter_(0, sorted_idx, sorted_logits)
-    probs = torch.softmax(logits, dim=-1)
-    return torch.multinomial(probs, 1).item()''',
+        cumulative = probs.cumsum(dim=-1)
+        remove = (cumulative - probs) >= top_p
+        remove[0] = False
+        sorted_logits = sorted_logits.masked_fill(remove, float("-inf"))
+        scores = torch.empty_like(scores).scatter(0, sorted_indices, sorted_logits)
+    return int(torch.multinomial(torch.softmax(scores, dim=-1), 1).item())''',
     "demo": """logits = torch.tensor([1.0, 5.0, 2.0, 0.5])
 print('top_k=1:', sample_top_k_top_p(logits.clone(), top_k=1))
 print('top_p=0.5:', sample_top_k_top_p(logits.clone(), top_p=0.5))""",
