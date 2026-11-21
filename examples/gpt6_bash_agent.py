@@ -49,8 +49,14 @@ def run_coding_agent(client, bash, task, model="gpt-6.2-sol", max_steps=8):
         input=[{"role": "user", "content": task}], tools=[BASH_TOOL],
     )
     for step in range(max_steps + 1):
+        # A failed/incomplete response is not a successful final answer.
+        status = getattr(response, "status", "completed")
+        if status != "completed":
+            raise RuntimeError(f"Model response not completed: {status}")
         calls = [item for item in response.output if item.type == "function_call"]
         if not calls:
+            if not response.output_text:
+                raise RuntimeError("Model returned neither tool calls nor final text")
             return response.output_text
         if step == max_steps:
             raise RuntimeError("Coding agent exceeded max_steps")
@@ -117,7 +123,7 @@ class DockerBash:
             "--memory=512m",
             "--cpus=1",
             "--user", f"{os.getuid()}:{os.getgid()}",
-            "--mount", f"type=bind,src={self.workspace},dst=/workspace,rw",
+            "--mount", f"type=bind,src={self.workspace},dst=/workspace",
             "--workdir", "/workspace",
             self.image, "bash", "-lc", command,
         ]

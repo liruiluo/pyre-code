@@ -61,7 +61,7 @@ def test_docker_bash_command_is_sandboxed_and_file_workspace_persists(tmp_path):
     assert "--workdir" in first and "/workspace" in first
     assert "bash" in first and "-lc" in first
     mount = next(first[i + 1] for i, x in enumerate(first) if x == "--mount")
-    assert f"src={executor.workspace},dst=/workspace,rw" in mount
+    assert f"src={executor.workspace},dst=/workspace" in mount
     assert next(second[i + 1] for i, x in enumerate(second) if x == "--mount") == mount
     assert all(x not in first for x in ["--privileged", "--net=host"])
     assert executor.workspace.is_dir()
@@ -83,3 +83,16 @@ def test_docker_bash_timeout_attempts_force_cleanup(tmp_path):
 def test_workspace_must_not_be_host_root():
     with pytest.raises(ValueError):
         DockerBash("/")
+
+def test_incomplete_model_response_is_not_treated_as_success():
+    bad = NS(id="resp_failed", output=[], output_text="", status="incomplete")
+    client = NS(responses=FakeResponses(bad))
+    with pytest.raises(RuntimeError, match="not completed"):
+        run_coding_agent(client, lambda cmd: "", "Try coding")
+
+
+def test_missing_final_answer_is_not_treated_as_success():
+    empty = NS(id="resp_empty", output=[], output_text="", status="completed")
+    client = NS(responses=FakeResponses(empty))
+    with pytest.raises(RuntimeError, match="neither tool calls nor final text"):
+        run_coding_agent(client, lambda cmd: "", "Try coding")
