@@ -117,7 +117,7 @@ class DockerBash:
             "--memory=512m",
             "--cpus=1",
             "--user", f"{os.getuid()}:{os.getgid()}",
-            "--mount", f"type=bind,src={self.workspace},dst=/workspace,rw",
+            "--mount", f"type=bind,src={self.workspace},dst=/workspace",
             "--workdir", "/workspace",
             self.image, "bash", "-lc", command,
         ]

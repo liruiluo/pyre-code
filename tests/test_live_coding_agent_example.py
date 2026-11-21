@@ -61,7 +61,7 @@ def test_docker_bash_command_is_sandboxed_and_file_workspace_persists(tmp_path):
     assert "--workdir" in first and "/workspace" in first
     assert "bash" in first and "-lc" in first
     mount = next(first[i + 1] for i, x in enumerate(first) if x == "--mount")
-    assert f"src={executor.workspace},dst=/workspace,rw" in mount
+    assert f"src={executor.workspace},dst=/workspace" in mount
     assert next(second[i + 1] for i, x in enumerate(second) if x == "--mount") == mount
     assert all(x not in first for x in ["--privileged", "--net=host"])
     assert executor.workspace.is_dir()
